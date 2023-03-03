@@ -64,14 +64,15 @@ class LitAutoEncoder(pl.LightningModule):
         dump_dir = os.path.join(self.dump_folder, str(batch_idx).zfill(3))
         os.makedirs(dump_dir)
         LOGGER.info("dumping to directory %s", dump_dir)
-        # TODO x 255
         for str_ in ["x", "y"]:
             for i_sample in range(x.shape[0]):
+                img_ = np.rollaxis(image_arrays[str_][i_sample], 0, 3)
+                img_ = (np.clip(img_, 0, 1) * 255).astype(np.uint8)
                 cv2.imwrite(
                     os.path.join(
                         dump_dir,
                         "img_%s_%s.png" % (str(i_sample).zfill(3), str_)),
-                        np.rollaxis(image_arrays[str_][i_sample], 0, 3))
+                        img_)
 
 
 # init the autoencoder
