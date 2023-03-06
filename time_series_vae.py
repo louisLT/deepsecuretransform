@@ -4,13 +4,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-import torchvision.transforms as transforms
 from torchvision.utils import save_image
-from torchvision.datasets import MNIST, FashionMNIST, CIFAR10, STL10
 import pandas as pd
 import os
 import datetime
 import logging
+
+import generate_time_series
 
 LOGGER = logging.getLogger(__name__)
 logging.basicConfig(format='%(levelname)s : %(message)s',
@@ -34,10 +34,10 @@ class Encoder(nn.Module):
     def __init__(self, color_channels, pooling_kernels, n_neurons_in_middle_layer):
         self.n_neurons_in_middle_layer = n_neurons_in_middle_layer
         super().__init__()
-        self.bottle = EncoderModule(color_channels, 32, stride=1, kernel=1, pad=0)
-        self.m1 = EncoderModule(32, 64, stride=1, kernel=3, pad=1)
-        self.m2 = EncoderModule(64, 128, stride=pooling_kernels[0], kernel=3, pad=1)
-        self.m3 = EncoderModule(128, 256, stride=pooling_kernels[1], kernel=3, pad=1)
+        self.bottle = EncoderModule(color_channels, 4, stride=1, kernel=1, pad=0)
+        self.m1 = EncoderModule(4, 8, stride=1, kernel=3, pad=1)
+        self.m2 = EncoderModule(8, 16, stride=pooling_kernels[0], kernel=3, pad=1)
+        self.m3 = EncoderModule(16, 32, stride=pooling_kernels[1], kernel=3, pad=1)
 
     def forward(self, x):
         out = self.m3(self.m2(self.m1(self.bottle(x))))
@@ -46,7 +46,10 @@ class Encoder(nn.Module):
 class DecoderModule(nn.Module):
     def __init__(self, input_channels, output_channels, stride, activation="relu"):
         super().__init__()
-        self.convt = nn.ConvTranspose2d(input_channels, output_channels, kernel_size=stride, stride=stride)
+        self.convt = nn.ConvTranspose2d(input_channels,
+                                        output_channels,
+                                        kernel_size=(1, stride),
+                                        stride=(1, stride))
         self.bn = nn.BatchNorm2d(output_channels)
         if activation == "relu":
             self.activation = nn.ReLU(inplace=True)
@@ -60,48 +63,36 @@ class Decoder(nn.Module):
     def __init__(self, color_channels, pooling_kernels, decoder_input_size):
         self.decoder_input_size = decoder_input_size
         super().__init__()
-        self.m1 = DecoderModule(256, 128, stride=1)
-        self.m2 = DecoderModule(128, 64, stride=pooling_kernels[1])
-        self.m3 = DecoderModule(64, 32, stride=pooling_kernels[0])
-        self.bottle = DecoderModule(32, color_channels, stride=1, activation="sigmoid")
+        self.m1 = DecoderModule(32, 16, stride=1)
+        self.m2 = DecoderModule(16, 8, stride=pooling_kernels[1])
+        self.m3 = DecoderModule(8, 4, stride=pooling_kernels[0])
+        self.bottle = DecoderModule(4, color_channels, stride=1, activation="relu")
 
     def forward(self, x):
-        out = x.view(-1, 256, self.decoder_input_size, self.decoder_input_size)
+        out = x.view(-1, 32, 1, self.decoder_input_size)
         out = self.m3(self.m2(self.m1(out)))
         return self.bottle(out)
 
 class VAE(nn.Module):
-    def __init__(self, dataset):
+    def __init__(self):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        assert dataset in ["mnist" ,"fashion-mnist", "cifar", "stl"]
+        # test llt
+        # self.device = "cpu"
 
         super().__init__()
-        # # latent features
+        # latent features
         self.n_latent_features = 64
 
         # resolution
-        # mnist, fashion-mnist : 28 -> 14 -> 7
-        # cifar : 32 -> 8 -> 4
-        # stl : 96 -> 24 -> 6
-        if dataset in ["mnist", "fashion-mnist"]:
-            pooling_kernel = [2, 2]
-            encoder_output_size = 7
-        elif dataset == "cifar":
-            pooling_kernel = [4, 2]
-            encoder_output_size = 4
-        elif dataset == "stl":
-            pooling_kernel = [4, 4]
-            encoder_output_size = 6
+        pooling_kernel = [2, 2]
+        encoder_output_size = 64
 
         # color channels
-        if dataset in ["mnist", "fashion-mnist"]:
-            color_channels = 1
-        else:
-            color_channels = 3
+        color_channels = 1
 
-        # # neurons int middle layer
-        n_neurons_middle_layer = 256 * encoder_output_size * encoder_output_size
+        # neurons int middle layer
+        n_neurons_middle_layer = 32 * encoder_output_size
 
         # Encoder
         self.encoder = Encoder(color_channels, pooling_kernel, n_neurons_middle_layer)
@@ -113,18 +104,9 @@ class VAE(nn.Module):
         self.decoder = Decoder(color_channels, pooling_kernel, encoder_output_size)
 
         # data
-        self.train_loader, self.test_loader = self.load_data(dataset)
+        self.train_loader, self.test_loader = self.load_data()
         # history
         self.history = {"loss":[], "val_loss":[]}
-
-        # local dump folder
-        existing_folders = sorted(os.listdir(DUMPS_DIR))
-        if existing_folders:
-            last_version = int(existing_folders[-1][-2:])
-        else:
-            last_version = -1
-        self.dump_folder = os.path.join(DUMPS_DIR, "version_%s" % str(last_version + 1).zfill(3))
-        os.makedirs(self.dump_folder)
 
     def _reparameterize(self, mu, logvar):
         std = logvar.mul(0.5).exp_()
@@ -155,52 +137,52 @@ class VAE(nn.Module):
         return d, mu, logvar
 
     # Data
-    def load_data(self, dataset):
-        data_transform = transforms.Compose([
-                transforms.ToTensor()
-        ])
-        if dataset == "mnist":
-            train = MNIST(root=PATH_DATASETS, train=True, transform=data_transform, download=True)
-            test = MNIST(root=PATH_DATASETS, train=False, transform=data_transform, download=True)
-        elif dataset == "fashion-mnist":
-            train = FashionMNIST(root=PATH_DATASETS, train=True, transform=data_transform, download=True)
-            test = FashionMNIST(root=PATH_DATASETS, train=False, transform=data_transform, download=True)
-        elif dataset == "cifar":
-            train = CIFAR10(root=PATH_DATASETS, train=True, transform=data_transform, download=True)
-            test = CIFAR10(root=PATH_DATASETS, train=False, transform=data_transform, download=True)
-        elif dataset == "stl":
-            train = STL10(root=PATH_DATASETS, split="unlabeled", transform=data_transform, download=True)
-            test = STL10(root=PATH_DATASETS, split="test", transform=data_transform, download=True)
+    def load_data(self):
 
-        train_loader = torch.utils.data.DataLoader(train, batch_size=128, shuffle=True, num_workers=0)
-        test_loader = torch.utils.data.DataLoader(test, batch_size=64, shuffle=True, num_workers=0)
+        ds = generate_time_series.TimeSeriesDataset(nb_points=256, interval_size=24, nb_samples=1024)
+        dl = torch.utils.data.DataLoader(ds, batch_size=64, num_workers=4)
+
+        train_loader = dl
+        test_loader = dl
 
         return train_loader, test_loader
 
     # Model
     def loss_function(self, recon_x, x, mu, logvar):
         # https://arxiv.org/abs/1312.6114 (Appendix B)
-        BCE = F.binary_cross_entropy(recon_x, x, size_average=False)
+        # BCE = F.binary_cross_entropy(recon_x, x, size_average=False)
+        BCE = F.mse_loss(recon_x, x, size_average=False)
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
         return BCE + KLD
 
     def init_model(self):
         self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
-
         if self.device == "cuda":
             self = self.cuda()
             torch.backends.cudnn.benchmark = True
         self.to(self.device)
 
+    def init_dump_folder(self):
+        # local dump folder
+        existing_folders = sorted(os.listdir(DUMPS_DIR))
+        if existing_folders:
+            last_version = int(existing_folders[-1][-2:])
+        else:
+            last_version = -1
+        self.num_version = last_version + 1
+        self.dump_folder = os.path.join(DUMPS_DIR, "version_%s" % str(self.num_version).zfill(3))
+        os.makedirs(self.dump_folder)
+        LOGGER.info("creating new dump folder : %s", self.dump_folder)
+
     # Train
     def fit_train(self, epoch):
         self.train()
-        LOGGER.info(f"Epoch: {epoch+1:d} {datetime.datetime.now()}")
+        LOGGER.info(f"Epoch: {epoch:d} {datetime.datetime.now()}")
         train_loss = 0
         samples_cnt = 0
-        for batch_idx, (inputs, _) in enumerate(self.train_loader):
-            inputs = inputs.to(self.device)
+        for batch_idx, inputs in enumerate(self.train_loader):
+            inputs = inputs.to(self.device, dtype=torch.float)
             self.optimizer.zero_grad()
             recon_batch, mu, logvar = self(inputs)
 
@@ -223,8 +205,8 @@ class VAE(nn.Module):
         val_loss = 0
         samples_cnt = 0
         with torch.no_grad():
-            for batch_idx, (inputs, _) in enumerate(self.test_loader):
-                inputs = inputs.to(self.device)
+            for batch_idx, inputs in enumerate(self.test_loader):
+                inputs = inputs.to(self.device, dtype=torch.float)
                 recon_batch, mu, logvar = self(inputs)
                 val_loss += self.loss_function(recon_batch, inputs, mu, logvar).item()
                 samples_cnt += inputs.size(0)
@@ -261,11 +243,35 @@ class VAE(nn.Module):
         )
         pd.DataFrame(net.history).to_csv(file_addr)
 
+    def save_model(self, checkpoint_name="model_state"):
+        file_addr = os.path.join(self.dump_folder, checkpoint_name + ".zip")
+        LOGGER.info("saving model to %s", file_addr)
+        torch.save(self.state_dict(), file_addr)
+
+    def load_model(self, num_version, checkpoint_name="model_state"):
+        # save on gpu, load on gpu : https://pytorch.org/tutorials/beginner/saving_loading_models.html
+        dump_folder = os.path.join(DUMPS_DIR, "version_%s" % str(num_version).zfill(3))
+        file_addr = os.path.join(dump_folder, checkpoint_name + ".zip")
+        LOGGER.info("loading model from %s", file_addr)
+        self.load_state_dict(torch.load(file_addr))
+
 if __name__ == "__main__":
-    net = VAE("mnist")
-    nb_epochs = 30
+
+    net = VAE()
+    nb_epochs = 1
     net.init_model()
+    net.init_dump_folder()
     for i in range(nb_epochs):
         net.fit_train(i + 1)
         net.test(i + 1)
     net.save_history()
+    net.save_model()
+
+    # load
+    # net_2 = VAE()
+    # net_2.load_model(net.num_version)
+    # net_2.init_model()
+    # net_2.init_dump_folder()
+    # net_2.test(9999)
+
+
