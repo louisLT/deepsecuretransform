@@ -1,8 +1,13 @@
 # adapted from https://gist.github.com/koshian2/64e92842bec58749826637e3860f11fa
 
+# # TODO :
+# 2) standard generate time series, sigmoid -a * b
+# 3) simpler model
+
 import os
 import datetime
 import logging
+import shutil
 
 import torch
 import torch.nn as nn
@@ -201,7 +206,7 @@ class VAE(nn.Module):
         return bce, kld
 
     def init_model(self):
-        self.optimizer = optim.Adam(self.parameters(), lr=1e-4)  # test llt 1e-3
+        self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
         if self.device == "cuda":
             self = self.cuda()
             torch.backends.cudnn.benchmark = True
@@ -218,6 +223,15 @@ class VAE(nn.Module):
         self.dump_folder = os.path.join(DUMPS_DIR, "version_%s" % str(self.num_version).zfill(3))
         os.makedirs(self.dump_folder)
         LOGGER.info("creating new dump folder : %s", self.dump_folder)
+
+        # save code files
+        main_script_path = os.path.realpath(__file__)
+        other_filenames = ["generate_time_series.py"]
+        files_to_save = [main_script_path] + [
+            os.path.join(os.path.dirname(main_script_path), elem) for elem in other_filenames]
+        for file_i in files_to_save:
+            shutil.copyfile(file_i,
+                            os.path.join(self.dump_folder, os.path.basename(file_i)))
 
     # Train
     def fit_train(self, epoch):
@@ -333,7 +347,7 @@ class VAE(nn.Module):
 if __name__ == "__main__":
 
     net = VAE()
-    nb_epochs = 300 # test llt 50
+    nb_epochs = 25
     net.init_model()
     net.init_dump_folder()
     for i in range(nb_epochs):

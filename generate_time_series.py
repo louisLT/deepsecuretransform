@@ -13,6 +13,7 @@ def create_random_time_series(nb_points, interval_size):
     # y_vals = [random.uniform(0, 1) for _ in range(len(x_vals))]
     # test llt
     y_vals = [random.uniform(0.2, 0.8) for _ in range(len(x_vals))]
+    # y_vals = [random.uniform(-1, 1) for _ in range(len(x_vals))]
 
     f = interp1d(x_vals, y_vals, kind='quadratic')
     ts = [float(f(i)) for i in range(nb_points)]
@@ -20,7 +21,9 @@ def create_random_time_series(nb_points, interval_size):
     # test llt
     ts = [max(min(1, i), 0) for i in ts]
 
+    # test llt
     return (np.array(ts) - np.min(ts) + random.uniform(0, 0.5))[None, None, :]
+    # return np.array(ts)[None, None, :]
 
 class TimeSeriesDataset(Dataset):
 
