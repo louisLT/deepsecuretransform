@@ -37,9 +37,14 @@ class Encoder(nn.Module):
         self.n_neurons_in_middle_layer = n_neurons_in_middle_layer
         super().__init__()
         self.bottle = EncoderModule(color_channels, 4, stride=1, kernel=1, pad=0)
+
         self.m1 = EncoderModule(4, 8, stride=1, kernel=3, pad=1)
         self.m2 = EncoderModule(8, 16, stride=pooling_kernels[0], kernel=3, pad=1)
         self.m3 = EncoderModule(16, 32, stride=pooling_kernels[1], kernel=3, pad=1)
+        # test llt
+        # self.m1 = EncoderModule(4, 4, stride=1, kernel=3, pad=1)
+        # self.m2 = EncoderModule(4, 4, stride=pooling_kernels[0], kernel=3, pad=1)
+        # self.m3 = EncoderModule(4, 4, stride=pooling_kernels[1], kernel=3, pad=1)
 
     def forward(self, x):
         out = self.m3(self.m2(self.m1(self.bottle(x))))
@@ -67,16 +72,25 @@ class Decoder(nn.Module):
     def __init__(self, color_channels, pooling_kernels, decoder_input_size):
         self.decoder_input_size = decoder_input_size
         super().__init__()
+
         self.m1 = DecoderModule(32, 16, stride=1)
         self.m2 = DecoderModule(16, 8, stride=pooling_kernels[1])
         self.m3 = DecoderModule(8, 4, stride=pooling_kernels[0])
+        # test llt
+        # self.m1 = DecoderModule(4, 4, stride=1)
+        # self.m2 = DecoderModule(4, 4, stride=pooling_kernels[1])
+        # self.m3 = DecoderModule(4, 4, stride=pooling_kernels[0])
 
         # test llt
         # self.bottle = DecoderModule(4, color_channels, stride=1, activation="relu")
         self.bottle = DecoderModule(4, color_channels, stride=1, activation="sigmoid")
 
     def forward(self, x):
+
         out = x.view(-1, 32, 1, self.decoder_input_size)
+        # test llt
+        # out = x.view(-1, 4, 1, self.decoder_input_size)
+
         out = self.m3(self.m2(self.m1(out)))
         return self.bottle(out)
 
@@ -89,7 +103,10 @@ class VAE(nn.Module):
 
         super().__init__()
         # latent features
-        self.n_latent_features = 64
+
+        # self.n_latent_features = 64
+        # test llt
+        self.n_latent_features = 256
 
         # resolution
         pooling_kernel = [2, 2]
@@ -99,12 +116,16 @@ class VAE(nn.Module):
         color_channels = 1
 
         # kld loss factor
-        # self.kld_loss_factor = 0.05
+
+        self.kld_loss_factor = 0.05
         # test llt
-        self.kld_loss_factor = 1
+        # self.kld_loss_factor = 1
 
         # neurons int middle layer
+
         n_neurons_middle_layer = 32 * encoder_output_size
+        # test llt
+        # n_neurons_middle_layer = 4 * encoder_output_size
 
         # Encoder
         self.encoder = Encoder(color_channels, pooling_kernel, n_neurons_middle_layer)
