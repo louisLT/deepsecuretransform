@@ -1,7 +1,8 @@
 # adapted from https://gist.github.com/koshian2/64e92842bec58749826637e3860f11fa
 
 # # TODO :
-# 2) standard generate time series, sigmoid -a * b
+# 2) moins de points pour l'echantillonage
+# ajouter un peu de bruit das les data
 # 3) simpler model
 
 import os
@@ -74,8 +75,9 @@ class DecoderModule(nn.Module):
         return self.activation(self.bn(self.convt(x)))
 
 class Decoder(nn.Module):
-    def __init__(self, color_channels, pooling_kernels, decoder_input_size):
+    def __init__(self, color_channels, pooling_kernels, decoder_input_size, device):
         self.decoder_input_size = decoder_input_size
+        self.device = device
         super().__init__()
 
         self.m1 = DecoderModule(32, 16, stride=1)
@@ -97,7 +99,10 @@ class Decoder(nn.Module):
         # out = x.view(-1, 4, 1, self.decoder_input_size)
 
         out = self.m3(self.m2(self.m1(out)))
+
+        # test llt
         return self.bottle(out)
+        # return (self.bottle(out) - 0.5) * 4
 
 class VAE(nn.Module):
     def __init__(self):
@@ -139,7 +144,7 @@ class VAE(nn.Module):
         self.fc2 = nn.Linear(n_neurons_middle_layer, self.n_latent_features)
         self.fc3 = nn.Linear(self.n_latent_features, n_neurons_middle_layer)
         # Decoder
-        self.decoder = Decoder(color_channels, pooling_kernel, encoder_output_size)
+        self.decoder = Decoder(color_channels, pooling_kernel, encoder_output_size, self.device)
 
         # data
         self.train_loader, self.test_loader = self.load_data()
@@ -328,7 +333,7 @@ class VAE(nn.Module):
     def save_history(self):
         file_addr = os.path.join(
             self.dump_folder,
-            "history.csv"
+            "history_%s.csv" % str(self.num_version).zfill(3)
         )
         pd.DataFrame(net.history).to_csv(file_addr)
 
