@@ -15,7 +15,7 @@ logging.basicConfig(format='%(levelname)s : %(message)s',
 
 PATH_DATASETS = os.environ.get("PATH_DATASETS", ".")
 LOGS_DIR = os.environ["LOGS_DIR"]
-DUMPS_DIR = os.path.join(LOGS_DIR, "dumps")
+DUMPS_DIR = os.environ["DUMPS_DIR"]
 
 # define any number of nn.Modules (or use your current ones)
 encoder = nn.Sequential(nn.Linear(28 * 28, 64), nn.ReLU(), nn.Linear(64, 3))
@@ -60,19 +60,23 @@ class LitAutoEncoder(pl.LightningModule):
         y = y.view(x.shape)
         image_arrays = {"x": x.cpu().detach().numpy(),
                         "y": y.cpu().detach().numpy()}
-        LOGGER.info("batch idx %s %s", self.dump_folder, str(batch_idx).zfill(3))
-        dump_dir = os.path.join(self.dump_folder, str(batch_idx).zfill(3))
-        os.makedirs(dump_dir)
+        LOGGER.info("batch idx %s, epoch idx %s",
+                    str(batch_idx).zfill(3),
+                    str(self.current_epoch).zfill(3))
+        dump_dir = os.path.join(self.dump_folder, str(self.current_epoch).zfill(3))
         LOGGER.info("dumping to directory %s", dump_dir)
+        if not os.path.isdir(dump_dir):
+            # condition for handling two first validation steps at epoch 0
+            os.makedirs(dump_dir)
         for str_ in ["x", "y"]:
             for i_sample in range(x.shape[0]):
                 img_ = np.rollaxis(image_arrays[str_][i_sample], 0, 3)
                 img_ = (np.clip(img_, 0, 1) * 255).astype(np.uint8)
-                cv2.imwrite(
-                    os.path.join(
-                        dump_dir,
-                        "img_%s_%s.png" % (str(i_sample).zfill(3), str_)),
-                        img_)
+                img_addr = os.path.join(
+                    dump_dir,
+                    "img_%s_%s_%s.png" % \
+                    (str(batch_idx).zfill(3), str(i_sample).zfill(3), str_))
+                cv2.imwrite(img_addr, img_)
 
 
 # init the autoencoder
@@ -84,9 +88,9 @@ train_loader = utils.data.DataLoader(dataset, batch_size=16)
 val_loader = utils.data.DataLoader(dataset, batch_size=4)
 
 # train the model (hint: here are some helpful Trainer arguments for rapid idea iteration)
-trainer = pl.Trainer(limit_train_batches=20,
+trainer = pl.Trainer(limit_train_batches=500,
                      limit_val_batches=1,
-                     max_epochs=2,
+                     max_epochs=30,
                      default_root_dir=LOGS_DIR,
                      logger=False)
 trainer.fit(model=autoencoder,
