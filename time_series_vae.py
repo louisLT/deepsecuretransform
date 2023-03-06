@@ -1,8 +1,6 @@
 # adapted from https://gist.github.com/koshian2/64e92842bec58749826637e3860f11fa
 
 # # TODO :
-# 2) moins de points pour l'echantillonage
-# ajouter un peu de bruit das les data
 # 3) simpler model
 
 import os
@@ -34,27 +32,8 @@ class EncoderModule(nn.Module):
         self.conv = nn.Conv2d(input_channels, output_channels, kernel_size=kernel, padding=pad, stride=stride)
         self.bn = nn.BatchNorm2d(output_channels)
         self.relu = nn.ReLU(inplace=True)
-
     def forward(self, x):
         return self.relu(self.bn(self.conv(x)))
-
-class Encoder(nn.Module):
-    def __init__(self, color_channels, pooling_kernels, n_neurons_in_middle_layer):
-        self.n_neurons_in_middle_layer = n_neurons_in_middle_layer
-        super().__init__()
-        self.bottle = EncoderModule(color_channels, 4, stride=1, kernel=1, pad=0)
-
-        self.m1 = EncoderModule(4, 8, stride=1, kernel=3, pad=1)
-        self.m2 = EncoderModule(8, 16, stride=pooling_kernels[0], kernel=3, pad=1)
-        self.m3 = EncoderModule(16, 32, stride=pooling_kernels[1], kernel=3, pad=1)
-        # test llt
-        # self.m1 = EncoderModule(4, 4, stride=1, kernel=3, pad=1)
-        # self.m2 = EncoderModule(4, 4, stride=pooling_kernels[0], kernel=3, pad=1)
-        # self.m3 = EncoderModule(4, 4, stride=pooling_kernels[1], kernel=3, pad=1)
-
-    def forward(self, x):
-        out = self.m3(self.m2(self.m1(self.bottle(x))))
-        return out.view(-1, self.n_neurons_in_middle_layer)
 
 class DecoderModule(nn.Module):
     def __init__(self, input_channels, output_channels, stride, activation="relu"):
@@ -70,57 +49,83 @@ class DecoderModule(nn.Module):
             self.activation = nn.Sigmoid()
         else:
             assert False, "unknown activation : %s" % activation
-
     def forward(self, x):
         return self.activation(self.bn(self.convt(x)))
 
-class Decoder(nn.Module):
-    def __init__(self, color_channels, pooling_kernels, decoder_input_size, device):
-        self.decoder_input_size = decoder_input_size
-        self.device = device
-        super().__init__()
+# test llt
 
+class Encoder(nn.Module):
+    def __init__(self, color_channels, pooling_kernels, n_neurons_in_middle_layer):
+        self.n_neurons_in_middle_layer = n_neurons_in_middle_layer
+        super().__init__()
+        self.bottle = EncoderModule(color_channels, 4, stride=1, kernel=1, pad=0)
+        self.m1 = EncoderModule(4, 8, stride=1, kernel=3, pad=1)
+        self.m2 = EncoderModule(8, 16, stride=pooling_kernels[0], kernel=3, pad=1)
+        self.m3 = EncoderModule(16, 32, stride=pooling_kernels[1], kernel=3, pad=1)
+    def forward(self, x):
+        out = self.m3(self.m2(self.m1(self.bottle(x))))
+        return out.view(-1, self.n_neurons_in_middle_layer)
+class Decoder(nn.Module):
+    def __init__(self, color_channels, pooling_kernels, decoder_input_size, bottleneck_nb_channels):
+        self.decoder_input_size = decoder_input_size
+        self.bottleneck_nb_channels = bottleneck_nb_channels
+        super().__init__()
         self.m1 = DecoderModule(32, 16, stride=1)
         self.m2 = DecoderModule(16, 8, stride=pooling_kernels[1])
         self.m3 = DecoderModule(8, 4, stride=pooling_kernels[0])
-        # test llt
-        # self.m1 = DecoderModule(4, 4, stride=1)
-        # self.m2 = DecoderModule(4, 4, stride=pooling_kernels[1])
-        # self.m3 = DecoderModule(4, 4, stride=pooling_kernels[0])
-
-        # test llt
-        # self.bottle = DecoderModule(4, color_channels, stride=1, activation="relu")
         self.bottle = DecoderModule(4, color_channels, stride=1, activation="sigmoid")
-
     def forward(self, x):
-
-        out = x.view(-1, 32, 1, self.decoder_input_size)
-        # test llt
-        # out = x.view(-1, 4, 1, self.decoder_input_size)
-
+        out = x.view(-1, self.bottleneck_nb_channels, 1, self.decoder_input_size)
         out = self.m3(self.m2(self.m1(out)))
-
-        # test llt
         return self.bottle(out)
-        # return (self.bottle(out) - 0.5) * 4
+
+# class Encoder(nn.Module):
+#     def __init__(self, color_channels, pooling_kernels, n_neurons_in_middle_layer):
+#         self.n_neurons_in_middle_layer = n_neurons_in_middle_layer
+#         super().__init__()
+#         self.bottle = EncoderModule(color_channels, 4, stride=2, kernel=3, pad=1)
+#         self.m1 = EncoderModule(4, 8, stride=2, kernel=3, pad=1)
+#         self.m2 = EncoderModule(8, 16, stride=2, kernel=3, pad=1)
+#     def forward(self, x):
+#         out = self.m2(self.m1(self.bottle(x)))
+#         return out.view(-1, self.n_neurons_in_middle_layer)
+# class Decoder(nn.Module):
+#     def __init__(self,
+#                  color_channels,
+#                  pooling_kernels,
+#                  decoder_input_size,
+#                  bottleneck_nb_channels):
+#         self.decoder_input_size = decoder_input_size
+#         self.bottleneck_nb_channels = bottleneck_nb_channels
+#         super().__init__()
+#         self.m1 = DecoderModule(16, 8, stride=2)
+#         self.m2 = DecoderModule(8, 4, stride=2)
+#         self.bottle = DecoderModule(4, color_channels, stride=2, activation="sigmoid")
+#     def forward(self, x):
+#         out = x.view(-1, self.bottleneck_nb_channels, 1, self.decoder_input_size)
+#         out = self.m2(self.m1(out))
+#         return self.bottle(out)
 
 class VAE(nn.Module):
     def __init__(self):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        # test llt
         # self.device = "cpu"
 
         super().__init__()
         # latent features
 
         # self.n_latent_features = 64
-        # test llt
         self.n_latent_features = 256
 
         # resolution
         pooling_kernel = [2, 2]
+
+        # test llt
         encoder_output_size = 64
+        bottleneck_nb_channels = 32
+        # encoder_output_size = 32
+        # bottleneck_nb_channels = 16
 
         # color channels
         color_channels = 1
@@ -128,23 +133,25 @@ class VAE(nn.Module):
         # kld loss factor
 
         # self.kld_loss_factor = 0.05
-        # test llt
         self.kld_loss_factor = 0
 
         # neurons int middle layer
 
-        n_neurons_middle_layer = 32 * encoder_output_size
         # test llt
-        # n_neurons_middle_layer = 4 * encoder_output_size
+        # n_neurons_in_middle_layer = bottleneck_nb_channels * encoder_output_size
+        n_neurons_in_middle_layer = bottleneck_nb_channels * encoder_output_size
 
         # Encoder
-        self.encoder = Encoder(color_channels, pooling_kernel, n_neurons_middle_layer)
+        self.encoder = Encoder(color_channels, pooling_kernel, n_neurons_in_middle_layer)
         # Middle
-        self.fc1 = nn.Linear(n_neurons_middle_layer, self.n_latent_features)
-        self.fc2 = nn.Linear(n_neurons_middle_layer, self.n_latent_features)
-        self.fc3 = nn.Linear(self.n_latent_features, n_neurons_middle_layer)
+        self.fc1 = nn.Linear(n_neurons_in_middle_layer, self.n_latent_features)
+        self.fc2 = nn.Linear(n_neurons_in_middle_layer, self.n_latent_features)
+        self.fc3 = nn.Linear(self.n_latent_features, n_neurons_in_middle_layer)
         # Decoder
-        self.decoder = Decoder(color_channels, pooling_kernel, encoder_output_size, self.device)
+        self.decoder = Decoder(color_channels,
+                               pooling_kernel,
+                               encoder_output_size,
+                               bottleneck_nb_channels)
 
         # data
         self.train_loader, self.test_loader = self.load_data()
@@ -159,7 +166,7 @@ class VAE(nn.Module):
 
     def _reparameterize(self, mu, logvar):
         std = logvar.mul(0.5).exp_()
-        esp = 0  # test llt torch.randn(*mu.size()).to(self.device)
+        esp = 0  # torch.randn(*mu.size()).to(self.device)
         z = mu + std * esp
         return z
 
@@ -204,7 +211,6 @@ class VAE(nn.Module):
         # BCE = F.binary_cross_entropy(recon_x, x, size_average=False)
 
         # bce = F.mse_loss(recon_x, x)
-        # test llt
         bce = F.binary_cross_entropy(recon_x, x, size_average=False)
 
         kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
