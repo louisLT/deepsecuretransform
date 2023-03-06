@@ -91,6 +91,9 @@ class VAE(nn.Module):
         # color channels
         color_channels = 1
 
+        # kld loss factor
+        self.kld_loss_factor = 1
+
         # neurons int middle layer
         n_neurons_middle_layer = 32 * encoder_output_size
 
@@ -106,7 +109,13 @@ class VAE(nn.Module):
         # data
         self.train_loader, self.test_loader = self.load_data()
         # history
-        self.history = {"loss":[], "val_loss":[]}
+        self.history = {
+            "train_bce_loss": [],
+            "train_kld_loss": [],
+            "train_loss":[],
+            "val_bce_loss": [],
+            "val_kld_loss": [],
+            "val_loss":[]}
 
     def _reparameterize(self, mu, logvar):
         std = logvar.mul(0.5).exp_()
@@ -139,7 +148,9 @@ class VAE(nn.Module):
     # Data
     def load_data(self):
 
-        ds = generate_time_series.TimeSeriesDataset(nb_points=256, interval_size=24, nb_samples=1024)
+        ds = generate_time_series.TimeSeriesDataset(nb_points=256,
+                                                    interval_size=24,
+                                                    nb_samples=1024)
         dl = torch.utils.data.DataLoader(ds, batch_size=64, num_workers=4)
 
         train_loader = dl
@@ -151,10 +162,9 @@ class VAE(nn.Module):
     def loss_function(self, recon_x, x, mu, logvar):
         # https://arxiv.org/abs/1312.6114 (Appendix B)
         # BCE = F.binary_cross_entropy(recon_x, x, size_average=False)
-        BCE = F.mse_loss(recon_x, x, size_average=False)
-        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-
-        return BCE + KLD
+        bce = F.mse_loss(recon_x, x)
+        kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        return bce, kld
 
     def init_model(self):
         self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
@@ -179,6 +189,8 @@ class VAE(nn.Module):
     def fit_train(self, epoch):
         self.train()
         LOGGER.info(f"Epoch: {epoch:d} {datetime.datetime.now()}")
+        bce_loss = 0
+        kld_loss = 0
         train_loss = 0
         samples_cnt = 0
         for batch_idx, inputs in enumerate(self.train_loader):
@@ -186,29 +198,48 @@ class VAE(nn.Module):
             self.optimizer.zero_grad()
             recon_batch, mu, logvar = self(inputs)
 
-            loss = self.loss_function(recon_batch, inputs, mu, logvar)
+            bce, kld = self.loss_function(recon_batch, inputs, mu, logvar)
+            loss = bce + self.kld_loss_factor * kld
             loss.backward()
             self.optimizer.step()
 
+            bce_loss += bce.item()
+            kld_loss += kld.item()
             train_loss += loss.item()
+
             samples_cnt += inputs.size(0)
 
             if batch_idx%50 == 0:
                 LOGGER.info(
-                    "TRAIN epoch %s, batch %s/%s, loss %s",
-                    epoch, batch_idx, len(self.train_loader), train_loss/samples_cnt)
+                    "TRAIN epoch %s, batch %s/%s, bce loss %s kld loss %s loss %s",
+                    epoch,
+                    batch_idx,
+                    len(self.train_loader),
+                    bce_loss / samples_cnt,
+                    kld_loss / samples_cnt,
+                    train_loss / samples_cnt)
 
-        self.history["loss"].append(train_loss/samples_cnt)
+        self.history["train_bce_loss"].append(bce_loss/samples_cnt)
+        self.history["train_kld_loss"].append(kld_loss/samples_cnt)
+        self.history["train_loss"].append(train_loss/samples_cnt)
 
     def test(self, epoch):
         self.eval()
+        bce_loss = 0
+        kld_loss = 0
         val_loss = 0
         samples_cnt = 0
         with torch.no_grad():
             for batch_idx, inputs in enumerate(self.test_loader):
                 inputs = inputs.to(self.device, dtype=torch.float)
                 recon_batch, mu, logvar = self(inputs)
-                val_loss += self.loss_function(recon_batch, inputs, mu, logvar).item()
+                bce, kld = self.loss_function(recon_batch, inputs, mu, logvar)
+                loss = bce + self.kld_loss_factor * kld
+
+                bce_loss += bce.item()
+                kld_loss += kld.item()
+                val_loss += loss.item()
+
                 samples_cnt += inputs.size(0)
 
                 if batch_idx == 0:
@@ -223,9 +254,15 @@ class VAE(nn.Module):
                     )
                     save_image(inputs, file_addr, nrow=8)
 
-        LOGGER.info(
-            "VAL epoch %s, loss %s",
-            epoch, val_loss/samples_cnt)
+            LOGGER.info(
+                "VAL epoch %s, bce loss %s kld loss %s loss %s",
+                epoch,
+                bce_loss / samples_cnt,
+                kld_loss / samples_cnt,
+                val_loss / samples_cnt)
+
+        self.history["val_bce_loss"].append(bce_loss/samples_cnt)
+        self.history["val_kld_loss"].append(kld_loss/samples_cnt)
         self.history["val_loss"].append(val_loss/samples_cnt)
 
         # sampling
@@ -258,7 +295,7 @@ class VAE(nn.Module):
 if __name__ == "__main__":
 
     net = VAE()
-    nb_epochs = 1
+    nb_epochs = 5
     net.init_model()
     net.init_dump_folder()
     for i in range(nb_epochs):

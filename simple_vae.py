@@ -174,8 +174,7 @@ class VAE(nn.Module):
         # https://arxiv.org/abs/1312.6114 (Appendix B)
         BCE = F.binary_cross_entropy(recon_x, x, size_average=False)
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-
-        return BCE + KLD
+        return BCE + 10 * KLD  # test llt facteur 10
 
     def init_model(self):
         self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
@@ -279,7 +278,7 @@ class VAE(nn.Module):
 if __name__ == "__main__":
 
     net = VAE()
-    nb_epochs = 1
+    nb_epochs = 5
     net.init_model()
     net.init_dump_folder()
     for i in range(nb_epochs):
@@ -289,10 +288,10 @@ if __name__ == "__main__":
     net.save_model()
 
     # load
-    net_2 = VAE()
-    net_2.load_model(net.num_version)
-    net_2.init_model()
-    net_2.init_dump_folder()
-    net_2.test(9999)
+    # net_2 = VAE()
+    # net_2.load_model(net.num_version)
+    # net_2.init_model()
+    # net_2.init_dump_folder()
+    # net_2.test(9999)
 
 
