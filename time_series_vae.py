@@ -19,7 +19,6 @@ logging.basicConfig(format='%(levelname)s : %(message)s',
 
 PATH_DATASETS = os.environ.get("PATH_DATASETS", ".")
 DUMPS_DIR = os.environ["DUMPS_DIR"]
-DATASET = "mnist"
 
 class EncoderModule(nn.Module):
     def __init__(self, input_channels, output_channels, stride, kernel, pad):
@@ -72,36 +71,36 @@ class Decoder(nn.Module):
         return self.bottle(out)
 
 class VAE(nn.Module):
-    def __init__(self):
+    def __init__(self, dataset):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        assert DATASET in ["mnist" ,"fashion-mnist", "cifar", "stl"]
+        assert dataset in ["mnist" ,"fashion-mnist", "cifar", "stl"]
 
         super().__init__()
-        # latent features
+        # # latent features
         self.n_latent_features = 64
 
         # resolution
         # mnist, fashion-mnist : 28 -> 14 -> 7
         # cifar : 32 -> 8 -> 4
         # stl : 96 -> 24 -> 6
-        if DATASET in ["mnist", "fashion-mnist"]:
+        if dataset in ["mnist", "fashion-mnist"]:
             pooling_kernel = [2, 2]
             encoder_output_size = 7
-        elif DATASET == "cifar":
+        elif dataset == "cifar":
             pooling_kernel = [4, 2]
             encoder_output_size = 4
-        elif DATASET == "stl":
+        elif dataset == "stl":
             pooling_kernel = [4, 4]
             encoder_output_size = 6
 
         # color channels
-        if DATASET in ["mnist", "fashion-mnist"]:
+        if dataset in ["mnist", "fashion-mnist"]:
             color_channels = 1
         else:
             color_channels = 3
 
-        # neurons int middle layer
+        # # neurons int middle layer
         n_neurons_middle_layer = 256 * encoder_output_size * encoder_output_size
 
         # Encoder
@@ -114,9 +113,18 @@ class VAE(nn.Module):
         self.decoder = Decoder(color_channels, pooling_kernel, encoder_output_size)
 
         # data
-        self.train_loader, self.test_loader = self.load_data(DATASET)
+        self.train_loader, self.test_loader = self.load_data(dataset)
         # history
         self.history = {"loss":[], "val_loss":[]}
+
+        # local dump folder
+        existing_folders = sorted(os.listdir(DUMPS_DIR))
+        if existing_folders:
+            last_version = int(existing_folders[-1][-2:])
+        else:
+            last_version = -1
+        self.dump_folder = os.path.join(DUMPS_DIR, "version_%s" % str(last_version + 1).zfill(3))
+        os.makedirs(self.dump_folder)
 
     def _reparameterize(self, mu, logvar):
         std = logvar.mul(0.5).exp_()
@@ -179,22 +187,11 @@ class VAE(nn.Module):
 
     def init_model(self):
         self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
+
         if self.device == "cuda":
             self = self.cuda()
             torch.backends.cudnn.benchmark = True
         self.to(self.device)
-
-    def init_dump_folder(self):
-        # local dump folder
-        existing_folders = sorted(os.listdir(DUMPS_DIR))
-        if existing_folders:
-            last_version = int(existing_folders[-1][-2:])
-        else:
-            last_version = -1
-        self.num_version = last_version + 1
-        self.dump_folder = os.path.join(DUMPS_DIR, "version_%s" % str(self.num_version).zfill(3))
-        os.makedirs(self.dump_folder)
-        LOGGER.info("creating new dump folder : %s", self.dump_folder)
 
     # Train
     def fit_train(self, epoch):
@@ -264,35 +261,11 @@ class VAE(nn.Module):
         )
         pd.DataFrame(net.history).to_csv(file_addr)
 
-    def save_model(self, checkpoint_name="model_state"):
-        file_addr = os.path.join(self.dump_folder, checkpoint_name + ".zip")
-        LOGGER.info("saving model to %s", file_addr)
-        torch.save(self.state_dict(), file_addr)
-
-    def load_model(self, num_version, checkpoint_name="model_state"):
-        # save on gpu, load on gpu : https://pytorch.org/tutorials/beginner/saving_loading_models.html
-        dump_folder = os.path.join(DUMPS_DIR, "version_%s" % str(num_version).zfill(3))
-        file_addr = os.path.join(dump_folder, checkpoint_name + ".zip")
-        LOGGER.info("loading model from %s", file_addr)
-        self.load_state_dict(torch.load(file_addr))
-
 if __name__ == "__main__":
-
-    net = VAE()
-    nb_epochs = 1
+    net = VAE("mnist")
+    nb_epochs = 30
     net.init_model()
-    net.init_dump_folder()
     for i in range(nb_epochs):
         net.fit_train(i + 1)
         net.test(i + 1)
     net.save_history()
-    net.save_model()
-
-    # load
-    net_2 = VAE()
-    net_2.load_model(net.num_version)
-    net_2.init_model()
-    net_2.init_dump_folder()
-    net_2.test(9999)
-
-
