@@ -201,7 +201,7 @@ class VAE(nn.Module):
         return bce, kld
 
     def init_model(self):
-        self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
+        self.optimizer = optim.Adam(self.parameters(), lr=1e-4)  # test llt 1e-3
         if self.device == "cuda":
             self = self.cuda()
             torch.backends.cudnn.benchmark = True
@@ -333,7 +333,7 @@ class VAE(nn.Module):
 if __name__ == "__main__":
 
     net = VAE()
-    nb_epochs = 50
+    nb_epochs = 300 # test llt 50
     net.init_model()
     net.init_dump_folder()
     for i in range(nb_epochs):
