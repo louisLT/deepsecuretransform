@@ -117,9 +117,9 @@ class VAE(nn.Module):
 
         # kld loss factor
 
-        self.kld_loss_factor = 0.05
+        # self.kld_loss_factor = 0.05
         # test llt
-        # self.kld_loss_factor = 1
+        self.kld_loss_factor = 0
 
         # neurons int middle layer
 
@@ -149,7 +149,7 @@ class VAE(nn.Module):
 
     def _reparameterize(self, mu, logvar):
         std = logvar.mul(0.5).exp_()
-        esp = torch.randn(*mu.size()).to(self.device)
+        esp = 0  # test llt torch.randn(*mu.size()).to(self.device)
         z = mu + std * esp
         return z
 
