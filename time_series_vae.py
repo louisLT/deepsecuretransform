@@ -1,14 +1,16 @@
 # adapted from https://gist.github.com/koshian2/64e92842bec58749826637e3860f11fa
 
+import os
+import datetime
+import logging
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from torchvision.utils import save_image
 import pandas as pd
-import os
-import datetime
-import logging
+
+import matplotlib.pyplot as plt
 
 import generate_time_series
 
@@ -55,6 +57,8 @@ class DecoderModule(nn.Module):
             self.activation = nn.ReLU(inplace=True)
         elif activation == "sigmoid":
             self.activation = nn.Sigmoid()
+        else:
+            assert False, "unknown activation : %s" % activation
 
     def forward(self, x):
         return self.activation(self.bn(self.convt(x)))
@@ -66,7 +70,10 @@ class Decoder(nn.Module):
         self.m1 = DecoderModule(32, 16, stride=1)
         self.m2 = DecoderModule(16, 8, stride=pooling_kernels[1])
         self.m3 = DecoderModule(8, 4, stride=pooling_kernels[0])
-        self.bottle = DecoderModule(4, color_channels, stride=1, activation="relu")
+
+        # test llt
+        # self.bottle = DecoderModule(4, color_channels, stride=1, activation="relu")
+        self.bottle = DecoderModule(4, color_channels, stride=1, activation="sigmoid")
 
     def forward(self, x):
         out = x.view(-1, 32, 1, self.decoder_input_size)
@@ -92,6 +99,8 @@ class VAE(nn.Module):
         color_channels = 1
 
         # kld loss factor
+        # self.kld_loss_factor = 0.05
+        # test llt
         self.kld_loss_factor = 1
 
         # neurons int middle layer
@@ -162,7 +171,11 @@ class VAE(nn.Module):
     def loss_function(self, recon_x, x, mu, logvar):
         # https://arxiv.org/abs/1312.6114 (Appendix B)
         # BCE = F.binary_cross_entropy(recon_x, x, size_average=False)
-        bce = F.mse_loss(recon_x, x)
+
+        # bce = F.mse_loss(recon_x, x)
+        # test llt
+        bce = F.binary_cross_entropy(recon_x, x, size_average=False)
+
         kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         return bce, kld
 
@@ -229,8 +242,11 @@ class VAE(nn.Module):
         kld_loss = 0
         val_loss = 0
         samples_cnt = 0
+        local_fig_folder = os.path.join(self.dump_folder, str(epoch).zfill(3))
+        os.makedirs(local_fig_folder)
         with torch.no_grad():
             for batch_idx, inputs in enumerate(self.test_loader):
+                inputs_ = inputs
                 inputs = inputs.to(self.device, dtype=torch.float)
                 recon_batch, mu, logvar = self(inputs)
                 bce, kld = self.loss_function(recon_batch, inputs, mu, logvar)
@@ -243,16 +259,17 @@ class VAE(nn.Module):
                 samples_cnt += inputs.size(0)
 
                 if batch_idx == 0:
-                    file_addr = os.path.join(
-                        self.dump_folder,
-                        f"epoch_{str(epoch)}_output.png"
-                    )
-                    save_image(recon_batch, file_addr, nrow=8)
-                    file_addr = os.path.join(
-                        self.dump_folder,
-                        f"epoch_{str(epoch)}_input.png"
-                    )
-                    save_image(inputs, file_addr, nrow=8)
+                    for i_fig in range(min(inputs.size(0), 20)):
+                        plt.figure()
+                        series_input = pd.Series(inputs_[i_fig, 0, 0])
+                        series_input.plot()
+                        series_output = pd.Series(recon_batch[i_fig, 0, 0].cpu())
+                        series_output.plot()
+                        file_addr = os.path.join(local_fig_folder,
+                                                 str(i_fig).zfill(3) + ".png")
+                        plt.savefig(file_addr)
+                        plt.close()
+
 
             LOGGER.info(
                 "VAL epoch %s, bce loss %s kld loss %s loss %s",
@@ -265,12 +282,12 @@ class VAE(nn.Module):
         self.history["val_kld_loss"].append(kld_loss/samples_cnt)
         self.history["val_loss"].append(val_loss/samples_cnt)
 
-        # sampling
-        file_addr = os.path.join(
-            self.dump_folder,
-            f"epoch_{str(epoch)}_sampling.png"
-        )
-        save_image(self.sampling(), file_addr, nrow=8)
+        # # sampling
+        # file_addr = os.path.join(
+        #     self.dump_folder,
+        #     f"epoch_{str(epoch)}_sampling.png"
+        # )
+        # save_image(self.sampling(), file_addr, nrow=8)
 
     # save results
     def save_history(self):
@@ -295,7 +312,7 @@ class VAE(nn.Module):
 if __name__ == "__main__":
 
     net = VAE()
-    nb_epochs = 5
+    nb_epochs = 50
     net.init_model()
     net.init_dump_folder()
     for i in range(nb_epochs):
