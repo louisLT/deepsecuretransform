@@ -1,0 +1,15 @@
+name: deepsecuretransform
+channels:
+  - conda-forge
+  - anaconda
+dependencies:
+  - python==3.9.*
+  - pip
+  - conda-forge::cudatoolkit=11.3.1
+  - numpy==1.20
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu113
+      - torch==1.11.*
+      - torchvision
+      - pandas==1.4.*
+      - matplotlib==3.5.*

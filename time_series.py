@@ -70,7 +70,7 @@ if __name__ == "__main__":
     if test == "one_time_series":
 
 
-        nb_samples = 6
+        nb_samples = 10
         num_workers = 0
         seed = None  if num_workers > 0 else 103
         plot = True
@@ -88,7 +88,6 @@ if __name__ == "__main__":
                 series_ = Series(series_i[0, 0, 0])
                 series_.plot(label=str(idx_i))
         tps_2 = time.time()
-        plt.legend(loc="upper left", prop={"size": 13})
         print("elapsed time : ", tps_2 - tps_1)
 
     else:

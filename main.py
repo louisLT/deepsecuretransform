@@ -1,27 +1,19 @@
-# inspired from https://gist.github.com/koshian2/64e92842bec58749826637e3860f11fa
-
 import os
 import datetime
 import logging
+import argparse
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import pandas as pd
-import matplotlib.pyplot as plt
 
 import time_series
 import modules
 import utils
 
-LOGGER = logging.getLogger(__name__)
-logging.basicConfig(format='%(levelname)s : %(message)s',
-                    level=logging.INFO,
-                    force=True)
-
-# data parameters
-PATH_DATASETS = os.environ.get("PATH_DATASETS", ".")
+# logs and experiment results
 DUMPS_DIR = os.environ["DUMPS_DIR"]
 
 # model parameters
@@ -29,7 +21,6 @@ COLOR_CHANNELS = 1
 ENCODER_OUTPUT_SIZE = 64
 BOTTLENECK_NB_CHANNELS = 32
 N_LATENT_FEATURES = 256
-
 
 class Autoencoder(nn.Module):
 
@@ -166,7 +157,6 @@ class Autoencoder(nn.Module):
                 file_addr = os.path.join(dump_folder, f"{checkpoint_name}_{str_}.zip")
                 LOGGER.info(f"loading {str_} model from %s", file_addr)
                 model_.load_state_dict(torch.load(file_addr))
-
 
 class SumDecoder(nn.Module):
 
@@ -314,46 +304,39 @@ class SumDecoder(nn.Module):
 
 if __name__ == "__main__":
 
-    pass
+    LOGGER = logging.getLogger(__name__)
 
-    net = Autoencoder(device="gpu")
-    nb_epochs = 25
-    net.init_model()
-    net.init_dump_folder()
-    for i in range(nb_epochs):
-        net.fit_train(i + 1)
-        net.test(i + 1)
-    net.save_history()
-    net.save_model()
+    logging.basicConfig(format='%(levelname)s : %(message)s',
+                        level=logging.INFO,
+                        force=True)
 
-    # load
-    # net_2 = Autoencoder(device="gpu")
-    # net_2.load_model(net.num_version)
-    # net_2.init_model()
-    # net_2.init_dump_folder()
-    # net_2.test(9999)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--train_autoencoder", action="store_true")
+    parser.add_argument("--train_sum_decoder", action="store_true")
+    parser.add_argument("--encoder_version_numbers", nargs="+", required=False)
+    parser.add_argument("--nb_epochs", type=int, default=25)
+    args = parser.parse_args()
 
-    # train only decoder
-    # net = Autoencoder(device="gpu")
-    # nb_epochs = 25
-    # # net.load_model(106, part="encoder")
-    # net.init_model(part="decoder")
-    # net.init_dump_folder()
-    # for i in range(nb_epochs):
-    #     net.fit_train(i + 1)
-    #     net.test(i + 1)
-    # net.save_history()
-    # net.save_model()
+    if args.train_autoencoder:
 
-    # training : 141, 142, 143
-    # train sum
-    # net = SumDecoder(n_time_series=2, device="cpu")
-    # nb_epochs = 25
-    # net.load_models([124, 125])
-    # net.init_model()
-    # net.init_dump_folder()
-    # for i in range(nb_epochs):
-    #     net.fit_train(i + 1)
-    #     net.test(i + 1)
-    # net.save_history()
-    # net.save_model()
+        net = Autoencoder(device="gpu")
+        net.init_model()
+        net.init_dump_folder()
+        for i in range(args.nb_epochs):
+            net.fit_train(i + 1)
+            net.test(i + 1)
+        net.save_history()
+        net.save_model()
+
+    if args.train_sum_decoder:
+
+        assert args.encoder_version_numbers, "needs encoder version numbers"
+        net = SumDecoder(n_time_series=len(args.encoder_version_numbers))
+        net.load_models(args.encoder_version_numbers)  # [144, 150]
+        net.init_model()
+        net.init_dump_folder()
+        for i in range(args.nb_epochs):
+            net.fit_train(i + 1)
+            net.test(i + 1)
+        net.save_history()
+        net.save_model()
