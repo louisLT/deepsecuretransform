@@ -72,7 +72,7 @@ Each training gives different encoders and decoders, due to the random initializ
 An illustration of the process is given below.
 
 <div align="center">
-<img src="assets/dst_1.png" width="800"/>
+<img src="assets/dst_1.png" width="750"/>
 </div>
 
 ## Task specific decoder
