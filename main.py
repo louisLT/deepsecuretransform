@@ -20,8 +20,11 @@ logging.basicConfig(format='%(levelname)s : %(message)s',
                     level=logging.INFO,
                     force=True)
 
+# data parameters
 PATH_DATASETS = os.environ.get("PATH_DATASETS", ".")
 DUMPS_DIR = os.environ["DUMPS_DIR"]
+
+# model parameters
 COLOR_CHANNELS = 1
 ENCODER_OUTPUT_SIZE = 64
 BOTTLENECK_NB_CHANNELS = 32
@@ -127,17 +130,17 @@ class Autoencoder(nn.Module):
                 loss = self.loss_function(recon_batch, inputs)
                 val_loss += loss.item()
                 samples_cnt += inputs.size(0)
-                max_nb_figures = 20
+                max_nb_figures = 40
                 if batch_idx == 0:
                     for i_fig in range(min(inputs.size(0), max_nb_figures)):
                         # reconstruction
                         utils.save_series(
                             [("input", inputs_[i_fig, 0, 0].cpu()), ("reconstruction", recon_batch[i_fig, 0, 0].cpu())],
-                            local_folder, i_fig, "recon")
+                            local_folder, i_fig, "recon", ylim=[0, 1.25])
                         # encoding
                         utils.save_series(
-                            [("encoded", z[i_fig].cpu())],
-                            local_folder, i_fig, "encode")
+                            [(None, z[i_fig].cpu())],
+                            local_folder, i_fig, "encode", ylim=None)
         LOGGER.info("VAL epoch %s, loss %s", epoch, val_loss / samples_cnt)
         self.history["val_loss"].append(val_loss/samples_cnt)
 
@@ -225,8 +228,12 @@ class SumDecoder(nn.Module):
         self.optimizer = optim.Adam(self.decoder.parameters(), lr=1e-3)
         if self.device == "cuda":
             self = self.cuda()
+            for model_ in self.encoders:
+                model_.cuda()
             torch.backends.cudnn.benchmark = True
         self.to(self.device)
+        for model_ in self.encoders:
+            model_.to(self.device)
 
     def init_dump_folder(self):
         main_script_path = os.path.realpath(__file__)
@@ -238,17 +245,17 @@ class SumDecoder(nn.Module):
         train_loss = 0
         samples_cnt = 0
         for sample_ in self.train_loader:
-            assert len(sample_) == self.n_time_series + 1, f"got {len(sample_)} args, expected {self.n_time_series}"
+            assert len(sample_) == self.n_time_series + 1, f"got {len(sample_)} element, expected {self.n_time_series}"
             sample_ = [elem.to(self.device, dtype=torch.float) for elem in sample_]
             inputs = sample_[:self.n_time_series]
             target = sample_[-1]
             self.optimizer.zero_grad()
-            recon_batch = self(inputs)
+            recon_batch = self(*inputs)
             loss = self.loss_function(recon_batch, target)
             loss.backward()
             self.optimizer.step()
             train_loss += loss.item()
-            samples_cnt += inputs.size(0)
+            samples_cnt += target.size(0)
         LOGGER.info("TRAIN epoch %s, loss %s", epoch, train_loss / samples_cnt)
         self.history["train_loss"].append(train_loss/samples_cnt)
 
@@ -261,20 +268,20 @@ class SumDecoder(nn.Module):
         test_loader = self.load_data(seed=103, num_workers=0, nb_samples=64, batch_size=64)
         with torch.no_grad():
             for batch_idx, sample_ in enumerate(test_loader):
-                assert len(sample_) == self.n_time_series + 1, f"got {len(sample_)} args, expected {self.n_time_series}"
+                assert len(sample_) == self.n_time_series + 1, f"got {len(sample_)} element, expected {self.n_time_series}"
                 sample_ = [elem.to(self.device, dtype=torch.float) for elem in sample_]
                 inputs = sample_[:self.n_time_series]
                 target = sample_[-1]
-                recon_batch = self(inputs)
-                loss = self.loss_function(recon_batch, inputs)
+                recon_batch = self(*inputs)
+                loss = self.loss_function(recon_batch, target)
                 val_loss += loss.item()
-                samples_cnt += inputs.size(0)
+                samples_cnt += target.size(0)
                 max_nb_figures = 20
                 if batch_idx == 0:
-                    for i_fig in range(min(inputs.size(0), max_nb_figures)):
+                    for i_fig in range(min(target.size(0), max_nb_figures)):
                         utils.save_series(
                             [("target", target[i_fig, 0, 0].cpu()), ("reconstruction", recon_batch[i_fig, 0, 0].cpu())],
-                            local_folder, i_fig, "recon")
+                            local_folder, i_fig, "recon", ylim=[0, 1.25])
         LOGGER.info("VAL epoch %s, loss %s", epoch, val_loss / samples_cnt)
         self.history["val_loss"].append(val_loss/samples_cnt)
 
@@ -297,7 +304,7 @@ class SumDecoder(nn.Module):
         """
         load encoders
         """
-        assert len(nums_version) == self.n_time_series, f"got {len(nums_version)} args, expected {self.n_time_series}"
+        assert len(nums_version) == self.n_time_series, f"got {len(nums_version)} version, expected {self.n_time_series}"
         for idx_i, num_version_i in enumerate(nums_version):
             dump_folder = os.path.join(DUMPS_DIR, "version_%s" % str(num_version_i).zfill(3))
             file_addr = os.path.join(dump_folder, f"{checkpoint_name}_encoder.zip")
@@ -338,14 +345,15 @@ if __name__ == "__main__":
     # net.save_history()
     # net.save_model()
 
+    # training : 141, 142, 143
     # train sum
-    net = SumDecoder(n_time_series=2, device="gpu")
-    nb_epochs = 25
-    net.load_models([124, 125])
-    net.init_model()
-    net.init_dump_folder()
-    for i in range(nb_epochs):
-        net.fit_train(i + 1)
-        net.test(i + 1)
-    net.save_history()
-    net.save_model()
+    # net = SumDecoder(n_time_series=2, device="cpu")
+    # nb_epochs = 25
+    # net.load_models([124, 125])
+    # net.init_model()
+    # net.init_dump_folder()
+    # for i in range(nb_epochs):
+    #     net.fit_train(i + 1)
+    #     net.test(i + 1)
+    # net.save_history()
+    # net.save_model()

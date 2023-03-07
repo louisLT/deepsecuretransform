@@ -37,18 +37,24 @@ def create_dump_folder(dumps_dir, main_script_path):
                         os.path.join(dump_folder, os.path.basename(file_i)))
     return num_version, dump_folder
 
-def save_series(list_of_series, local_folder, idx, suffix):
+def save_series(list_of_series, local_folder, idx, suffix, ylim):
     """plot list of series on a figure, and in a csv
     """
     # reconstruction
     plt.figure()
+    plt.xlim([0, 255])
+    if ylim is not None:
+        plt.ylim(ylim)
+    plt.axis("off")
     df = {}
     for name_i, series_i in list_of_series:
         series_i = pd.Series(series_i)
         df[name_i] = series_i
-        series_i.plot()
+        series_i.plot(label=name_i)
     df = pd.DataFrame(df)
     file_addr = os.path.join(local_folder, f"{str(idx).zfill(3)}_{suffix}")
+    if all(elem[0] is not None for elem in list_of_series):
+        plt.legend(loc="upper left", prop={"size": 13})
     plt.savefig(file_addr + ".png")
     plt.close()
     df.to_csv(file_addr + ".csv")

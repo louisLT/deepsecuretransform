@@ -65,44 +65,53 @@ if __name__ == "__main__":
 
     import time
 
+    test = "one_time_series"
 
-    # nb_samples = 6
-    # num_workers = 0
-    # seed = None  if num_workers > 0 else 103
-    # plot = True
+    if test == "one_time_series":
 
 
-    # ds = TimeSeriesDataset(nb_points=256, interval_size=24, nb_samples=nb_samples, seed=seed)
-    # dl = torch.utils.data.DataLoader(ds, batch_size=1, num_workers=num_workers)
+        nb_samples = 6
+        num_workers = 0
+        seed = None  if num_workers > 0 else 103
+        plot = True
 
-    # tps_1 = time.time()
-    # for idx_i, series_i in enumerate(dl):
-    #     if plot:
-    #         series_ = Series(series_i[0, 0, 0])
-    #         series_.plot()
-    # tps_2 = time.time()
-    # print("elapsed time : ", tps_2 - tps_1)
+        ds = TimeSeriesDataset(nb_points=256, interval_size=24, nb_samples=nb_samples, seed=seed)
+        dl = torch.utils.data.DataLoader(ds, batch_size=1, num_workers=num_workers)
 
+        tps_1 = time.time()
+        plt.figure()
+        plt.xlim([0, 255])
+        plt.ylim([0, 1.25])
+        plt.axis("off")
+        for idx_i, series_i in enumerate(dl):
+            if plot:
+                series_ = Series(series_i[0, 0, 0])
+                series_.plot(label=str(idx_i))
+        tps_2 = time.time()
+        plt.legend(loc="upper left", prop={"size": 13})
+        print("elapsed time : ", tps_2 - tps_1)
 
-    nb_samples = 6
-    num_workers = 0
-    seed = None  if num_workers > 0 else 103
-    plot = True
-    n_series = 2
+    else:
 
-    ds = SumNTimeSeriesDataset(nb_points=256,
-                               interval_size=24,
-                               nb_samples=nb_samples,
-                               n_series=n_series,
-                               seed=seed)
-    dl = torch.utils.data.DataLoader(ds, batch_size=1, num_workers=num_workers)
+        nb_samples = 6
+        num_workers = 0
+        seed = None  if num_workers > 0 else 103
+        plot = True
+        n_series = 2
 
-    tps_1 = time.time()
-    for idx_i, series in enumerate(dl):
-        if plot:
-            plt.figure()
-            for ts_ in series:
-                series_ = Series(ts_[0, 0, 0])
-                series_.plot()
-    tps_2 = time.time()
-    print("elapsed time : ", tps_2 - tps_1)
+        ds = SumNTimeSeriesDataset(nb_points=256,
+                                interval_size=24,
+                                nb_samples=nb_samples,
+                                n_series=n_series,
+                                seed=seed)
+        dl = torch.utils.data.DataLoader(ds, batch_size=1, num_workers=num_workers)
+
+        tps_1 = time.time()
+        for idx_i, series in enumerate(dl):
+            if plot:
+                plt.figure()
+                for ts_ in series:
+                    series_ = Series(ts_[0, 0, 0])
+                    series_.plot()
+        tps_2 = time.time()
+        print("elapsed time : ", tps_2 - tps_1)
