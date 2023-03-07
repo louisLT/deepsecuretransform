@@ -36,7 +36,7 @@ class EncoderModule(nn.Module):
         return self.relu(self.bn(self.conv(x)))
 
 class DecoderModule(nn.Module):
-    def __init__(self, input_channels, output_channels, stride, activation="relu"):
+    def __init__(self, input_channels, output_channels, stride, activation="relu", apply_bn=True):
         super().__init__()
         self.convt = nn.ConvTranspose2d(input_channels,
                                         output_channels,
@@ -49,8 +49,9 @@ class DecoderModule(nn.Module):
             self.activation = nn.Sigmoid()
         else:
             assert False, "unknown activation : %s" % activation
+        self.apply_bn = apply_bn
     def forward(self, x):
-        return self.activation(self.bn(self.convt(x)))
+        return self.activation(self.bn(self.convt(x)) if self.apply_bn else self.convt(x))
 
 # test llt
 
@@ -73,7 +74,8 @@ class Decoder(nn.Module):
         self.m1 = DecoderModule(32, 16, stride=1)
         self.m2 = DecoderModule(16, 8, stride=pooling_kernels[1])
         self.m3 = DecoderModule(8, 4, stride=pooling_kernels[0])
-        self.bottle = DecoderModule(4, color_channels, stride=1, activation="sigmoid")
+        self.bottle = DecoderModule(4, color_channels, stride=1, activation="sigmoid", apply_bn=False)
+
     def forward(self, x):
         out = x.view(-1, self.bottleneck_nb_channels, 1, self.decoder_input_size)
         out = self.m3(self.m2(self.m1(out)))
