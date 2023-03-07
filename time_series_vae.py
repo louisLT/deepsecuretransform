@@ -25,17 +25,24 @@ logging.basicConfig(format='%(levelname)s : %(message)s',
 
 PATH_DATASETS = os.environ.get("PATH_DATASETS", ".")
 DUMPS_DIR = os.environ["DUMPS_DIR"]
+COLOR_CHANNELS = 1
+ENCODER_OUTPUT_SIZE = 64
+BOTTLENECK_NB_CHANNELS = 32
+N_LATENT_FEATURES = 256
 
 class EncoderModule(nn.Module):
+
     def __init__(self, input_channels, output_channels, stride, kernel, pad):
         super().__init__()
         self.conv = nn.Conv2d(input_channels, output_channels, kernel_size=kernel, padding=pad, stride=stride)
         self.bn = nn.BatchNorm2d(output_channels)
         self.relu = nn.ReLU(inplace=True)
+
     def forward(self, x):
         return self.relu(self.bn(self.conv(x)))
 
 class DecoderModule(nn.Module):
+
     def __init__(self, input_channels, output_channels, stride, activation="relu", apply_bn=True):
         super().__init__()
         self.convt = nn.ConvTranspose2d(input_channels,
@@ -50,10 +57,12 @@ class DecoderModule(nn.Module):
         else:
             assert False, "unknown activation : %s" % activation
         self.apply_bn = apply_bn
+
     def forward(self, x):
         return self.activation(self.bn(self.convt(x)) if self.apply_bn else self.convt(x))
 
 class Encoder(nn.Module):
+
     def __init__(self, color_channels, bottleneck_nb_channels, encoder_output_size, n_latent_features):
         self.bottleneck_nb_channels = bottleneck_nb_channels
         self.n_neurons_in_middle_layer = bottleneck_nb_channels * encoder_output_size
@@ -68,7 +77,8 @@ class Encoder(nn.Module):
         return self.fc(out.view(-1, self.n_neurons_in_middle_layer))
 
 class Decoder(nn.Module):
-    def __init__(self, color_channels, encoder_output_size, bottleneck_nb_channels, n_latent_features):
+
+    def __init__(self, color_channels, bottleneck_nb_channels, encoder_output_size, n_latent_features):
         self.encoder_output_size = encoder_output_size
         self.bottleneck_nb_channels = bottleneck_nb_channels
         self.n_neurons_in_middle_layer = bottleneck_nb_channels * encoder_output_size
@@ -85,35 +95,32 @@ class Decoder(nn.Module):
         out = self.m3(self.m2(self.m1(out)))
         return self.bottle(out)
 
-class VAE(nn.Module):
+def get_device(device):
+    if device == "gpu":
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        assert device == "cpu", f"unknown device : {device}"
+        return "cpu"
+
+class Autoencoder(nn.Module):
 
     def __init__(self, device="gpu"):
 
-        if device == "gpu":
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        else:
-            assert device == "cpu", f"unknown device : {device}"
-            self.device = "cpu"
+        self.device = get_device(device)
 
         super().__init__()
 
-        # model parameters
-        color_channels = 1
-        encoder_output_size = 64
-        bottleneck_nb_channels = 32
-        n_latent_features = 256
+        # encoder
+        self.encoder = Encoder(COLOR_CHANNELS,
+                               BOTTLENECK_NB_CHANNELS,
+                               ENCODER_OUTPUT_SIZE,
+                               N_LATENT_FEATURES)
 
-        # Encoder
-        self.encoder = Encoder(color_channels,
-                               bottleneck_nb_channels,
-                               encoder_output_size,
-                               n_latent_features)
-
-        # Decoder
-        self.decoder = Decoder(color_channels,
-                               encoder_output_size,
-                               bottleneck_nb_channels,
-                               n_latent_features)
+        # decoder
+        self.decoder = Decoder(COLOR_CHANNELS,
+                               BOTTLENECK_NB_CHANNELS,
+                               ENCODER_OUTPUT_SIZE,
+                               N_LATENT_FEATURES)
 
         # data
         self.train_loader = self.load_data(seed=None, num_workers=4, nb_samples=1024, batch_size=64)
@@ -132,7 +139,6 @@ class VAE(nn.Module):
         d = self.decoder(z)
         return d
 
-    # Data
     def load_data(self, seed, num_workers, nb_samples, batch_size):
         ds = generate_time_series.TimeSeriesDataset(nb_points=256,
                                                     interval_size=24,
@@ -143,7 +149,6 @@ class VAE(nn.Module):
                                            num_workers=num_workers,
                                            shuffle=False)
 
-    # Model
     def loss_function(self, recon_x, x):
         return F.binary_cross_entropy(recon_x, x, reduction="sum")
 
@@ -181,7 +186,6 @@ class VAE(nn.Module):
             shutil.copyfile(file_i,
                             os.path.join(self.dump_folder, os.path.basename(file_i)))
 
-    # Train
     def fit_train(self, epoch):
         self.train()
         LOGGER.info(f"\nEpoch: {epoch:d} {datetime.datetime.now()}")
@@ -191,16 +195,11 @@ class VAE(nn.Module):
             inputs = inputs.to(self.device, dtype=torch.float)
             self.optimizer.zero_grad()
             recon_batch = self(inputs)
-
-            # recon_batch = self.decoder(z)
-
             loss = self.loss_function(recon_batch, inputs)
             loss.backward()
             self.optimizer.step()
-
             train_loss += loss.item()
             samples_cnt += inputs.size(0)
-
             if batch_idx%50 == 0:
                 LOGGER.info(
                     "TRAIN epoch %s, batch %s/%s, loss %s",
@@ -208,7 +207,6 @@ class VAE(nn.Module):
                     batch_idx,
                     len(self.train_loader),
                     train_loss / samples_cnt)
-
         self.history["train_loss"].append(train_loss/samples_cnt)
 
     def test(self, epoch):
@@ -222,33 +220,39 @@ class VAE(nn.Module):
             for batch_idx, inputs in enumerate(test_loader):
                 inputs_ = inputs
                 inputs = inputs.to(self.device, dtype=torch.float)
-                recon_batch = self(inputs)
+                z = self.encoder(inputs)
+                recon_batch = self.decoder(z)
                 loss = self.loss_function(recon_batch, inputs)
-
                 val_loss += loss.item()
                 samples_cnt += inputs.size(0)
-
                 max_nb_figures = 20
                 if batch_idx == 0:
+                    # TODO write csv
                     for i_fig in range(min(inputs.size(0), max_nb_figures)):
+                        # reconstruction
                         plt.figure()
                         series_input = pd.Series(inputs_[i_fig, 0, 0])
                         series_input.plot()
                         series_output = pd.Series(recon_batch[i_fig, 0, 0].cpu())
                         series_output.plot()
                         file_addr = os.path.join(local_fig_folder,
-                                                 str(i_fig).zfill(3) + ".png")
+                                                 str(i_fig).zfill(3) + "_recon.png")
                         plt.savefig(file_addr)
                         plt.close()
-
+                        # encoding
+                        plt.figure()
+                        series_encoded = pd.Series(z[i_fig].cpu())
+                        series_encoded.plot()
+                        file_addr = os.path.join(local_fig_folder,
+                                                 str(i_fig).zfill(3) + "_encode.png")
+                        plt.savefig(file_addr)
+                        plt.close()
             LOGGER.info(
                 "VAL epoch %s, loss %s",
                 epoch,
                 val_loss / samples_cnt)
-
         self.history["val_loss"].append(val_loss/samples_cnt)
 
-    # save results
     def save_history(self):
         file_addr = os.path.join(
             self.dump_folder,
@@ -272,11 +276,69 @@ class VAE(nn.Module):
                 LOGGER.info(f"loading {str_} model from %s", file_addr)
                 model_.load_state_dict(torch.load(file_addr))
 
+
+class SumDecoder(nn.Module):
+
+    def __init__(self, device="gpu"):
+
+        self.device = get_device(device)
+
+        super().__init__()
+
+        # encoder
+        self.encoder = Encoder(COLOR_CHANNELS,
+                               BOTTLENECK_NB_CHANNELS,
+                               ENCODER_OUTPUT_SIZE,
+                               N_LATENT_FEATURES)
+
+        # decoder
+        self.decoder = Decoder(COLOR_CHANNELS,
+                               BOTTLENECK_NB_CHANNELS,
+                               ENCODER_OUTPUT_SIZE,
+                               N_LATENT_FEATURES * 3)
+
+        # data
+        self.train_loader = self.load_data(seed=None,
+                                           num_workers=4,
+                                           nb_samples=1024,
+                                           batch_size=64)
+
+        # history
+        self.history = {
+            "train_loss":[],
+            "val_loss":[]}
+
+    def forward(self, x1, x2, x3):
+        with torch.no_grad():
+            x1 = self.encoder(x1)
+            x2 = self.encoder(x2)
+            x3 = self.encoder(x3)
+            z = torch.cat([x1, x2, x3], dim=1)
+        d = self.decoder(z)
+        return d
+
+    def load_data(self, seed, num_workers, nb_samples, batch_size):
+        ds = generate_time_series.Sum3TimeSeriesDataset(nb_points=256,
+                                                        interval_size=24,
+                                                        nb_samples=nb_samples,
+                                                        seed=seed)
+        return torch.utils.data.DataLoader(ds,
+                                           batch_size=batch_size,
+                                           num_workers=num_workers,
+                                           shuffle=False)
+
+    def init_model(self):
+        self.optimizer = optim.Adam(self.decoder.parameters(), lr=1e-3)
+        if self.device == "cuda":
+            self = self.cuda()
+            torch.backends.cudnn.benchmark = True
+        self.to(self.device)
+
 if __name__ == "__main__":
 
     pass
 
-    net = VAE(device="gpu")
+    net = Autoencoder(device="gpu")
     nb_epochs = 25
     net.init_model()
     net.init_dump_folder()
@@ -287,14 +349,14 @@ if __name__ == "__main__":
     net.save_model()
 
     # load
-    # net_2 = VAE(device="gpu")
+    # net_2 = Autoencoder(device="gpu")
     # net_2.load_model(net.num_version)
     # net_2.init_model()
     # net_2.init_dump_folder()
     # net_2.test(9999)
 
     # train only decoder
-    # net = VAE(device="gpu")
+    # net = Autoencoder(device="gpu")
     # nb_epochs = 25
     # # net.load_model(106, part="encoder")
     # net.init_model(part="decoder")
