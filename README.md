@@ -84,5 +84,5 @@ In our example, we just train a neural network to compute the mean of two time s
 An illustration of the process is given below.
 
 <div align="center">
-<img src="assets/dst_2.png" width="600"/>
+<img src="assets/dst_2.png" width="650"/>
 </div>
