@@ -87,10 +87,13 @@ class Decoder(nn.Module):
 
 class VAE(nn.Module):
 
-    def __init__(self):
+    def __init__(self, device="gpu"):
 
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        # self.device = "cpu"
+        if device == "gpu":
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        else:
+            assert device == "cpu", f"unknown device : {device}"
+            self.device = "cpu"
 
         super().__init__()
 
@@ -113,7 +116,7 @@ class VAE(nn.Module):
                                n_latent_features)
 
         # data
-        self.train_loader, self.test_loader = self.load_data()
+        self.train_loader = self.load_data(seed=None, num_workers=4, nb_samples=1024, batch_size=64)
 
         # history
         self.history = {
@@ -121,29 +124,38 @@ class VAE(nn.Module):
             "val_loss":[]}
 
     def forward(self, x):
-        z = self.encoder(x)
+        if self.part == "decoder":
+            with torch.no_grad():
+                z = self.encoder(x)
+        else:
+            z = self.encoder(x)
         d = self.decoder(z)
         return d
 
     # Data
-    def load_data(self):
-
+    def load_data(self, seed, num_workers, nb_samples, batch_size):
         ds = generate_time_series.TimeSeriesDataset(nb_points=256,
                                                     interval_size=24,
-                                                    nb_samples=1024)
-        dl = torch.utils.data.DataLoader(ds, batch_size=64, num_workers=4)
-
-        train_loader = dl
-        test_loader = dl
-
-        return train_loader, test_loader
+                                                    nb_samples=nb_samples,
+                                                    seed=seed)
+        return torch.utils.data.DataLoader(ds,
+                                           batch_size=batch_size,
+                                           num_workers=num_workers,
+                                           shuffle=False)
 
     # Model
     def loss_function(self, recon_x, x):
-        return F.binary_cross_entropy(recon_x, x, reduction="sum")  # TODO use reduction parameter
+        return F.binary_cross_entropy(recon_x, x, reduction="sum")
 
-    def init_model(self):
-        self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
+    def init_model(self, part="*"):
+        self.part = part
+        if part == "*":
+            self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
+        elif part == "encoder":
+            self.optimizer = optim.Adam(self.encoder.parameters(), lr=1e-3)
+        else:
+            assert part == "decoder", f"unknown part : {part}"
+            self.optimizer = optim.Adam(self.decoder.parameters(), lr=1e-3)
         if self.device == "cuda":
             self = self.cuda()
             torch.backends.cudnn.benchmark = True
@@ -153,7 +165,7 @@ class VAE(nn.Module):
         # local dump folder
         existing_folders = sorted(os.listdir(DUMPS_DIR))
         if existing_folders:
-            last_version = int(existing_folders[-1][-2:])
+            last_version = int(existing_folders[-1][-3:])
         else:
             last_version = -1
         self.num_version = last_version + 1
@@ -179,6 +191,9 @@ class VAE(nn.Module):
             inputs = inputs.to(self.device, dtype=torch.float)
             self.optimizer.zero_grad()
             recon_batch = self(inputs)
+
+            # recon_batch = self.decoder(z)
+
             loss = self.loss_function(recon_batch, inputs)
             loss.backward()
             self.optimizer.step()
@@ -202,8 +217,9 @@ class VAE(nn.Module):
         samples_cnt = 0
         local_fig_folder = os.path.join(self.dump_folder, str(epoch).zfill(3))
         os.makedirs(local_fig_folder)
+        test_loader = self.load_data(seed=103, num_workers=0, nb_samples=64, batch_size=64)
         with torch.no_grad():
-            for batch_idx, inputs in enumerate(self.test_loader):
+            for batch_idx, inputs in enumerate(test_loader):
                 inputs_ = inputs
                 inputs = inputs.to(self.device, dtype=torch.float)
                 recon_batch = self(inputs)
@@ -212,8 +228,9 @@ class VAE(nn.Module):
                 val_loss += loss.item()
                 samples_cnt += inputs.size(0)
 
+                max_nb_figures = 20
                 if batch_idx == 0:
-                    for i_fig in range(min(inputs.size(0), 20)):
+                    for i_fig in range(min(inputs.size(0), max_nb_figures)):
                         plt.figure()
                         series_input = pd.Series(inputs_[i_fig, 0, 0])
                         series_input.plot()
@@ -237,19 +254,7 @@ class VAE(nn.Module):
             self.dump_folder,
             "history_%s.csv" % str(self.num_version).zfill(3)
         )
-        pd.DataFrame(net.history).to_csv(file_addr)
-
-    # def save_model(self, checkpoint_name="model_state"):
-    #     file_addr = os.path.join(self.dump_folder, checkpoint_name + ".zip")
-    #     LOGGER.info("saving model to %s", file_addr)
-    #     torch.save(self.state_dict(), file_addr)
-
-    # def load_model(self, num_version, checkpoint_name="model_state"):
-    #     # save on gpu, load on gpu : https://pytorch.org/tutorials/beginner/saving_loading_models.html
-    #     dump_folder = os.path.join(DUMPS_DIR, "version_%s" % str(num_version).zfill(3))
-    #     file_addr = os.path.join(dump_folder, checkpoint_name + ".zip")
-    #     LOGGER.info("loading model from %s", file_addr)
-    #     self.load_state_dict(torch.load(file_addr))
+        pd.DataFrame(self.history).to_csv(file_addr)
 
     def save_model(self, checkpoint_name="model_state"):
         for str_, model_ in [("encoder", self.encoder), ("decoder", self.decoder)]:
@@ -257,17 +262,21 @@ class VAE(nn.Module):
             LOGGER.info(f"saving {str_} model to {file_addr}")
             torch.save(model_.state_dict(), file_addr)
 
-    def load_model(self, num_version, checkpoint_name="model_state"):
+    def load_model(self, num_version, checkpoint_name="model_state", part="*"):
         # save on gpu, load on gpu : https://pytorch.org/tutorials/beginner/saving_loading_models.html
+        assert part in ["encoder", "decoder", "*"], f"unknown part : {part}"
         dump_folder = os.path.join(DUMPS_DIR, "version_%s" % str(num_version).zfill(3))
         for str_, model_ in [("encoder", self.encoder), ("decoder", self.decoder)]:
-            file_addr = os.path.join(dump_folder, f"{checkpoint_name}_{str_}.zip")
-            LOGGER.info(f"loading {str_} model from %s", file_addr)
-            model_.load_state_dict(torch.load(file_addr))
+            if part in [str_, "*"]:
+                file_addr = os.path.join(dump_folder, f"{checkpoint_name}_{str_}.zip")
+                LOGGER.info(f"loading {str_} model from %s", file_addr)
+                model_.load_state_dict(torch.load(file_addr))
 
 if __name__ == "__main__":
 
-    net = VAE()
+    pass
+
+    net = VAE(device="gpu")
     nb_epochs = 25
     net.init_model()
     net.init_dump_folder()
@@ -278,10 +287,20 @@ if __name__ == "__main__":
     net.save_model()
 
     # load
-    # net_2 = VAE()
+    # net_2 = VAE(device="gpu")
     # net_2.load_model(net.num_version)
     # net_2.init_model()
     # net_2.init_dump_folder()
     # net_2.test(9999)
 
-
+    # train only decoder
+    # net = VAE(device="gpu")
+    # nb_epochs = 25
+    # # net.load_model(106, part="encoder")
+    # net.init_model(part="decoder")
+    # net.init_dump_folder()
+    # for i in range(nb_epochs):
+    #     net.fit_train(i + 1)
+    #     net.test(i + 1)
+    # net.save_history()
+    # net.save_model()
