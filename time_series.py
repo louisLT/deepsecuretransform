@@ -38,13 +38,14 @@ class TimeSeriesDataset(Dataset):
     def __getitem__(self, idx):
         return create_random_time_series(self.nb_points, self.interval_size, self.rng)
 
-class Sum3TimeSeriesDataset(Dataset):
+class SumNTimeSeriesDataset(Dataset):
 
-    def __init__(self, nb_points, interval_size, nb_samples, seed=None):
-        super(Sum3TimeSeriesDataset).__init__()
+    def __init__(self, nb_points, interval_size, nb_samples, n_series, seed=None):
+        super(SumNTimeSeriesDataset).__init__()
         self.nb_points = nb_points
         self.interval_size = interval_size
         self.nb_samples = nb_samples
+        self.n_series = n_series
         if seed is not None:
             self.rng = np.random.default_rng(seed)
         else:
@@ -54,11 +55,11 @@ class Sum3TimeSeriesDataset(Dataset):
         return self.nb_samples
 
     def __getitem__(self, idx):
-        ts_1 = create_random_time_series(self.nb_points, self.interval_size, self.rng)
-        ts_2 = create_random_time_series(self.nb_points, self.interval_size, self.rng)
-        ts_3 = create_random_time_series(self.nb_points, self.interval_size, self.rng)
-        mean_ = (ts_1 + ts_2 + ts_3) / 3
-        return (ts_1, ts_2, ts_3, mean_)
+        series = []
+        for _ in range(self.n_series):
+            series.append(create_random_time_series(self.nb_points, self.interval_size, self.rng))
+        mean_ = np.mean(series, axis=0)
+        return tuple(series) + (mean_,)
 
 if __name__ == "__main__":
 
@@ -87,20 +88,21 @@ if __name__ == "__main__":
     num_workers = 0
     seed = None  if num_workers > 0 else 103
     plot = True
+    n_series = 2
 
-    ds = Sum3TimeSeriesDataset(nb_points=256,
+    ds = SumNTimeSeriesDataset(nb_points=256,
                                interval_size=24,
                                nb_samples=nb_samples,
+                               n_series=n_series,
                                seed=seed)
     dl = torch.utils.data.DataLoader(ds, batch_size=1, num_workers=num_workers)
 
     tps_1 = time.time()
-    for idx_i, (x1, x2, x3, mean_) in enumerate(dl):
+    for idx_i, series in enumerate(dl):
         if plot:
             plt.figure()
-            for ts_ in [x1, x2, x3, mean_]:
+            for ts_ in series:
                 series_ = Series(ts_[0, 0, 0])
                 series_.plot()
-            # plt.close()
     tps_2 = time.time()
     print("elapsed time : ", tps_2 - tps_1)
