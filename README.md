@@ -55,8 +55,9 @@ Here we could set any number of version numbers (provided they correspond to dum
 
 The time series generator permits to create random realistic time series of 256 data points ranging between 0 and 1. These generated time series are used for both training and test. Below are a few examples.
 
+<div align="center">
 <img src="assets/random_time_series.png" width="400"/>
-
+</div>
 
 ## Private autoencoder
 
@@ -70,7 +71,9 @@ Each training gives different encoders and decoders, due to the random initializ
 
 An illustration of the process is given below.
 
+<div align="center">
 <img src="assets/dst_1.png" width="800"/>
+</div>
 
 ## Task specific decoder
 
@@ -80,5 +83,6 @@ In our example, we just train a neural network to compute the mean of two time s
 
 An illustration of the process is given below.
 
-<img src="assets/dst_2.png" width="800"/>
-
+<div align="center">
+<img src="assets/dst_2.png" width="600"/>
+</div>
