@@ -1,3 +1,7 @@
+"""
+Author : Louis Le Tarnec
+"""
+
 import os
 import datetime
 import logging

@@ -1,3 +1,7 @@
+"""
+Author : Louis Le Tarnec
+"""
+
 from pandas import Series
 from scipy.interpolate import interp1d
 import numpy as np

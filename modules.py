@@ -1,3 +1,7 @@
+"""
+Author : Louis Le Tarnec
+"""
+
 import torch.nn as nn
 
 class EncoderModule(nn.Module):
