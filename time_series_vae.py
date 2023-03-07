@@ -172,7 +172,7 @@ class VAE(nn.Module):
     # Train
     def fit_train(self, epoch):
         self.train()
-        LOGGER.info(f"Epoch: {epoch:d} {datetime.datetime.now()}")
+        LOGGER.info(f"\nEpoch: {epoch:d} {datetime.datetime.now()}")
         train_loss = 0
         samples_cnt = 0
         for batch_idx, inputs in enumerate(self.train_loader):
@@ -239,17 +239,31 @@ class VAE(nn.Module):
         )
         pd.DataFrame(net.history).to_csv(file_addr)
 
+    # def save_model(self, checkpoint_name="model_state"):
+    #     file_addr = os.path.join(self.dump_folder, checkpoint_name + ".zip")
+    #     LOGGER.info("saving model to %s", file_addr)
+    #     torch.save(self.state_dict(), file_addr)
+
+    # def load_model(self, num_version, checkpoint_name="model_state"):
+    #     # save on gpu, load on gpu : https://pytorch.org/tutorials/beginner/saving_loading_models.html
+    #     dump_folder = os.path.join(DUMPS_DIR, "version_%s" % str(num_version).zfill(3))
+    #     file_addr = os.path.join(dump_folder, checkpoint_name + ".zip")
+    #     LOGGER.info("loading model from %s", file_addr)
+    #     self.load_state_dict(torch.load(file_addr))
+
     def save_model(self, checkpoint_name="model_state"):
-        file_addr = os.path.join(self.dump_folder, checkpoint_name + ".zip")
-        LOGGER.info("saving model to %s", file_addr)
-        torch.save(self.state_dict(), file_addr)
+        for str_, model_ in [("encoder", self.encoder), ("decoder", self.decoder)]:
+            file_addr = os.path.join(self.dump_folder, f"{checkpoint_name}_{str_}.zip")
+            LOGGER.info(f"saving {str_} model to {file_addr}")
+            torch.save(model_.state_dict(), file_addr)
 
     def load_model(self, num_version, checkpoint_name="model_state"):
         # save on gpu, load on gpu : https://pytorch.org/tutorials/beginner/saving_loading_models.html
         dump_folder = os.path.join(DUMPS_DIR, "version_%s" % str(num_version).zfill(3))
-        file_addr = os.path.join(dump_folder, checkpoint_name + ".zip")
-        LOGGER.info("loading model from %s", file_addr)
-        self.load_state_dict(torch.load(file_addr))
+        for str_, model_ in [("encoder", self.encoder), ("decoder", self.decoder)]:
+            file_addr = os.path.join(dump_folder, f"{checkpoint_name}_{str_}.zip")
+            LOGGER.info(f"loading {str_} model from %s", file_addr)
+            model_.load_state_dict(torch.load(file_addr))
 
 if __name__ == "__main__":
 
