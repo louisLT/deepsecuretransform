@@ -53,146 +53,77 @@ class DecoderModule(nn.Module):
     def forward(self, x):
         return self.activation(self.bn(self.convt(x)) if self.apply_bn else self.convt(x))
 
-# test llt
-
 class Encoder(nn.Module):
-    def __init__(self, color_channels, pooling_kernels, n_neurons_in_middle_layer):
-        self.n_neurons_in_middle_layer = n_neurons_in_middle_layer
+    def __init__(self, color_channels, bottleneck_nb_channels, encoder_output_size, n_latent_features):
+        self.bottleneck_nb_channels = bottleneck_nb_channels
+        self.n_neurons_in_middle_layer = bottleneck_nb_channels * encoder_output_size
         super().__init__()
         self.bottle = EncoderModule(color_channels, 4, stride=1, kernel=1, pad=0)
         self.m1 = EncoderModule(4, 8, stride=1, kernel=3, pad=1)
-        self.m2 = EncoderModule(8, 16, stride=pooling_kernels[0], kernel=3, pad=1)
-        self.m3 = EncoderModule(16, 32, stride=pooling_kernels[1], kernel=3, pad=1)
+        self.m2 = EncoderModule(8, 16, stride=2, kernel=3, pad=1)
+        self.m3 = EncoderModule(16, self.bottleneck_nb_channels, stride=2, kernel=3, pad=1)
+        self.fc = nn.Linear(self.n_neurons_in_middle_layer, n_latent_features)
     def forward(self, x):
         out = self.m3(self.m2(self.m1(self.bottle(x))))
-        return out.view(-1, self.n_neurons_in_middle_layer)
+        return self.fc(out.view(-1, self.n_neurons_in_middle_layer))
+
 class Decoder(nn.Module):
-    def __init__(self, color_channels, pooling_kernels, decoder_input_size, bottleneck_nb_channels):
-        self.decoder_input_size = decoder_input_size
+    def __init__(self, color_channels, encoder_output_size, bottleneck_nb_channels, n_latent_features):
+        self.encoder_output_size = encoder_output_size
         self.bottleneck_nb_channels = bottleneck_nb_channels
+        self.n_neurons_in_middle_layer = bottleneck_nb_channels * encoder_output_size
         super().__init__()
         self.m1 = DecoderModule(32, 16, stride=1)
-        self.m2 = DecoderModule(16, 8, stride=pooling_kernels[1])
-        self.m3 = DecoderModule(8, 4, stride=pooling_kernels[0])
-        self.bottle = DecoderModule(4, color_channels, stride=1, activation="sigmoid", apply_bn=False)
+        self.m2 = DecoderModule(16, 8, stride=2)
+        self.m3 = DecoderModule(8, 4, stride=2)
+        self.bottle = DecoderModule(4, color_channels, stride=1, activation="sigmoid")
+        self.fc = nn.Linear(n_latent_features, self.n_neurons_in_middle_layer)
 
     def forward(self, x):
-        out = x.view(-1, self.bottleneck_nb_channels, 1, self.decoder_input_size)
+        x = self.fc(x)
+        out = x.view(-1, self.bottleneck_nb_channels, 1, self.encoder_output_size)
         out = self.m3(self.m2(self.m1(out)))
         return self.bottle(out)
 
-# class Encoder(nn.Module):
-#     def __init__(self, color_channels, pooling_kernels, n_neurons_in_middle_layer):
-#         self.n_neurons_in_middle_layer = n_neurons_in_middle_layer
-#         super().__init__()
-#         self.bottle = EncoderModule(color_channels, 4, stride=2, kernel=3, pad=1)
-#         self.m1 = EncoderModule(4, 8, stride=2, kernel=3, pad=1)
-#         self.m2 = EncoderModule(8, 16, stride=2, kernel=3, pad=1)
-#     def forward(self, x):
-#         out = self.m2(self.m1(self.bottle(x)))
-#         return out.view(-1, self.n_neurons_in_middle_layer)
-# class Decoder(nn.Module):
-#     def __init__(self,
-#                  color_channels,
-#                  pooling_kernels,
-#                  decoder_input_size,
-#                  bottleneck_nb_channels):
-#         self.decoder_input_size = decoder_input_size
-#         self.bottleneck_nb_channels = bottleneck_nb_channels
-#         super().__init__()
-#         self.m1 = DecoderModule(16, 8, stride=2)
-#         self.m2 = DecoderModule(8, 4, stride=2)
-#         self.bottle = DecoderModule(4, color_channels, stride=2, activation="sigmoid")
-#     def forward(self, x):
-#         out = x.view(-1, self.bottleneck_nb_channels, 1, self.decoder_input_size)
-#         out = self.m2(self.m1(out))
-#         return self.bottle(out)
-
 class VAE(nn.Module):
-    def __init__(self):
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+    def __init__(self):
+
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         # self.device = "cpu"
 
         super().__init__()
-        # latent features
 
-        # self.n_latent_features = 64
-        self.n_latent_features = 256
-
-        # resolution
-        pooling_kernel = [2, 2]
-
-        # test llt
+        # model parameters
+        color_channels = 1
         encoder_output_size = 64
         bottleneck_nb_channels = 32
-        # encoder_output_size = 32
-        # bottleneck_nb_channels = 16
-
-        # color channels
-        color_channels = 1
-
-        # kld loss factor
-
-        # self.kld_loss_factor = 0.05
-        self.kld_loss_factor = 0
-
-        # neurons int middle layer
-
-        # test llt
-        # n_neurons_in_middle_layer = bottleneck_nb_channels * encoder_output_size
-        n_neurons_in_middle_layer = bottleneck_nb_channels * encoder_output_size
+        n_latent_features = 256
 
         # Encoder
-        self.encoder = Encoder(color_channels, pooling_kernel, n_neurons_in_middle_layer)
-        # Middle
-        self.fc1 = nn.Linear(n_neurons_in_middle_layer, self.n_latent_features)
-        self.fc2 = nn.Linear(n_neurons_in_middle_layer, self.n_latent_features)
-        self.fc3 = nn.Linear(self.n_latent_features, n_neurons_in_middle_layer)
+        self.encoder = Encoder(color_channels,
+                               bottleneck_nb_channels,
+                               encoder_output_size,
+                               n_latent_features)
+
         # Decoder
         self.decoder = Decoder(color_channels,
-                               pooling_kernel,
                                encoder_output_size,
-                               bottleneck_nb_channels)
+                               bottleneck_nb_channels,
+                               n_latent_features)
 
         # data
         self.train_loader, self.test_loader = self.load_data()
+
         # history
         self.history = {
-            "train_bce_loss": [],
-            "train_kld_loss": [],
             "train_loss":[],
-            "val_bce_loss": [],
-            "val_kld_loss": [],
             "val_loss":[]}
 
-    def _reparameterize(self, mu, logvar):
-        std = logvar.mul(0.5).exp_()
-        esp = 0  # torch.randn(*mu.size()).to(self.device)
-        z = mu + std * esp
-        return z
-
-    def _bottleneck(self, h):
-        mu, logvar = self.fc1(h), self.fc2(h)
-        z = self._reparameterize(mu, logvar)
-        return z, mu, logvar
-
-    def sampling(self):
-        # assume latent features space ~ N(0, 1)
-        z = torch.randn(64, self.n_latent_features).to(self.device)
-        z = self.fc3(z)
-        # decode
-        return self.decoder(z)
-
     def forward(self, x):
-        # Encoder
-        h = self.encoder(x)
-        # Bottle-neck
-        z, mu, logvar = self._bottleneck(h)
-        # decoder
-        z = self.fc3(z)
+        z = self.encoder(x)
         d = self.decoder(z)
-        return d, mu, logvar
+        return d
 
     # Data
     def load_data(self):
@@ -208,15 +139,8 @@ class VAE(nn.Module):
         return train_loader, test_loader
 
     # Model
-    def loss_function(self, recon_x, x, mu, logvar):
-        # https://arxiv.org/abs/1312.6114 (Appendix B)
-        # BCE = F.binary_cross_entropy(recon_x, x, size_average=False)
-
-        # bce = F.mse_loss(recon_x, x)
-        bce = F.binary_cross_entropy(recon_x, x, size_average=False)
-
-        kld = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-        return bce, kld
+    def loss_function(self, recon_x, x):
+        return F.binary_cross_entropy(recon_x, x, reduction="sum")  # TODO use reduction parameter
 
     def init_model(self):
         self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
@@ -236,7 +160,6 @@ class VAE(nn.Module):
         self.dump_folder = os.path.join(DUMPS_DIR, "version_%s" % str(self.num_version).zfill(3))
         os.makedirs(self.dump_folder)
         LOGGER.info("creating new dump folder : %s", self.dump_folder)
-
         # save code files
         main_script_path = os.path.realpath(__file__)
         other_filenames = ["generate_time_series.py"]
@@ -250,44 +173,31 @@ class VAE(nn.Module):
     def fit_train(self, epoch):
         self.train()
         LOGGER.info(f"Epoch: {epoch:d} {datetime.datetime.now()}")
-        bce_loss = 0
-        kld_loss = 0
         train_loss = 0
         samples_cnt = 0
         for batch_idx, inputs in enumerate(self.train_loader):
             inputs = inputs.to(self.device, dtype=torch.float)
             self.optimizer.zero_grad()
-            recon_batch, mu, logvar = self(inputs)
-
-            bce, kld = self.loss_function(recon_batch, inputs, mu, logvar)
-            loss = bce + self.kld_loss_factor * kld
+            recon_batch = self(inputs)
+            loss = self.loss_function(recon_batch, inputs)
             loss.backward()
             self.optimizer.step()
 
-            bce_loss += bce.item()
-            kld_loss += kld.item()
             train_loss += loss.item()
-
             samples_cnt += inputs.size(0)
 
             if batch_idx%50 == 0:
                 LOGGER.info(
-                    "TRAIN epoch %s, batch %s/%s, bce loss %s kld loss %s loss %s",
+                    "TRAIN epoch %s, batch %s/%s, loss %s",
                     epoch,
                     batch_idx,
                     len(self.train_loader),
-                    bce_loss / samples_cnt,
-                    kld_loss / samples_cnt,
                     train_loss / samples_cnt)
 
-        self.history["train_bce_loss"].append(bce_loss/samples_cnt)
-        self.history["train_kld_loss"].append(kld_loss/samples_cnt)
         self.history["train_loss"].append(train_loss/samples_cnt)
 
     def test(self, epoch):
         self.eval()
-        bce_loss = 0
-        kld_loss = 0
         val_loss = 0
         samples_cnt = 0
         local_fig_folder = os.path.join(self.dump_folder, str(epoch).zfill(3))
@@ -296,14 +206,10 @@ class VAE(nn.Module):
             for batch_idx, inputs in enumerate(self.test_loader):
                 inputs_ = inputs
                 inputs = inputs.to(self.device, dtype=torch.float)
-                recon_batch, mu, logvar = self(inputs)
-                bce, kld = self.loss_function(recon_batch, inputs, mu, logvar)
-                loss = bce + self.kld_loss_factor * kld
+                recon_batch = self(inputs)
+                loss = self.loss_function(recon_batch, inputs)
 
-                bce_loss += bce.item()
-                kld_loss += kld.item()
                 val_loss += loss.item()
-
                 samples_cnt += inputs.size(0)
 
                 if batch_idx == 0:
@@ -318,24 +224,12 @@ class VAE(nn.Module):
                         plt.savefig(file_addr)
                         plt.close()
 
-
             LOGGER.info(
-                "VAL epoch %s, bce loss %s kld loss %s loss %s",
+                "VAL epoch %s, loss %s",
                 epoch,
-                bce_loss / samples_cnt,
-                kld_loss / samples_cnt,
                 val_loss / samples_cnt)
 
-        self.history["val_bce_loss"].append(bce_loss/samples_cnt)
-        self.history["val_kld_loss"].append(kld_loss/samples_cnt)
         self.history["val_loss"].append(val_loss/samples_cnt)
-
-        # # sampling
-        # file_addr = os.path.join(
-        #     self.dump_folder,
-        #     f"epoch_{str(epoch)}_sampling.png"
-        # )
-        # save_image(self.sampling(), file_addr, nrow=8)
 
     # save results
     def save_history(self):
