@@ -79,6 +79,8 @@ An illustration of the process is given below.
 
 Encoded data are trained as such manner that no information is lost, and that it is possible to retrieve original data with a neural network. For this reason, it is possible to train a task-specific decoder, taking several inputs encoded with different models, and outputing the result of a computation on these inputs. As any function can be simulated by a neural network, this method theoretically permits to calculate anything on some data split between several data owners, while ensuring each of them that nothing else can be done from these data.
 
+Note that the task-specific decoder network training pipeline needs encoded data and associated targets, but doesn't need to access the encoder networks.
+
 In our example, we just train a neural network to compute the mean of two time series.
 
 An illustration of the process is given below.
