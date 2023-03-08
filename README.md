@@ -67,7 +67,7 @@ The encoder module is a succession of 1D convolutional layers, followed by a ful
 
 The decoder module ic composed of a fully connected layer, followed by a succession of 1D deconvolutional layers, outputing a time series of the same format as the input.
 
-Each training gives different encoders and decoders, due to the random initialization of weights and the randomness in data distribution. For this reason, if two data owners 1 and 2 operate two trainings independantly, the decoder 2 cannot be used to retrieve data encoded with decoder 1. The decoder networks must be kept secret by data owners, and considered as decryption keys.
+Each training gives different encoders and decoders, due to the random initialization of weights and the randomness in data distribution. For this reason, if two data owners 1 and 2 operate two trainings independantly, the decoder 2 cannot be used to retrieve data encoded with encoder 1 (and vice versa). The decoder networks must be kept secret by data owners, and considered as decryption keys.
 
 An illustration of the process is given below.
 
