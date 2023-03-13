@@ -27,6 +27,11 @@ BOTTLENECK_NB_CHANNELS = 32
 N_LATENT_FEATURES = 256
 
 class Autoencoder(nn.Module):
+    """
+    Implement autoencoder class, for training and test of the encoder - decoder networks.
+    These networks are kept secret by the data owner.
+    The encoder is used to encrypt data before being shared with other data owners.
+    """
 
     def __init__(self, device="gpu"):
 
@@ -163,6 +168,12 @@ class Autoencoder(nn.Module):
                 model_.load_state_dict(torch.load(file_addr))
 
 class SumDecoder(nn.Module):
+    """
+    Implement task specific decoder.
+    Here the task is to make the mean of two encoded time series.
+    This network will be shared with other data owners, for computing mean of
+    time series without giving access to detail of time series individually.
+    """
 
     def __init__(self, n_time_series=3, device="gpu"):
 

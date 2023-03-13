@@ -25,6 +25,9 @@ def create_random_time_series(nb_points, interval_size, rng):
     return np.array(ts)[None, None, :]
 
 class TimeSeriesDataset(Dataset):
+    """
+    single random realistic time series generator
+    """
 
     def __init__(self, nb_points, interval_size, nb_samples, seed=None):
         super(TimeSeriesDataset).__init__()
@@ -43,6 +46,9 @@ class TimeSeriesDataset(Dataset):
         return create_random_time_series(self.nb_points, self.interval_size, self.rng)
 
 class SumNTimeSeriesDataset(Dataset):
+    """
+    generat n random realistic time series and the corresponding sum
+    """
 
     def __init__(self, nb_points, interval_size, nb_samples, n_series, seed=None):
         super(SumNTimeSeriesDataset).__init__()
@@ -72,6 +78,7 @@ if __name__ == "__main__":
     test = "one_time_series"
 
     if test == "one_time_series":
+        # test TimeSeriesDataset
 
 
         nb_samples = 10
@@ -95,6 +102,7 @@ if __name__ == "__main__":
         print("elapsed time : ", tps_2 - tps_1)
 
     else:
+        # test SumNTimeSeriesDataset
 
         nb_samples = 6
         num_workers = 0
